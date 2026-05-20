@@ -11,6 +11,7 @@ import { ConfettiBurst } from '@/components/ConfettiBurst';
 import { MatchScoreboard } from '@/components/MatchScoreboard';
 import { PixelButton } from '@/components/PixelButton';
 import { PixelBorderPanel } from '@/components/PixelBorderPanel';
+import { ScreenShake } from '@/components/ScreenShake';
 import {
   DefenderId,
   POINTS_BLOCK_FOR_SHOOTER,
@@ -23,6 +24,7 @@ import {
 import { FONT, PALETTE, SPACING } from '@/constants/theme';
 import { botShotResult } from '@/game/botAI';
 import { playSfx } from '@/game/audio';
+import { heavyTap, mediumTap } from '@/game/haptics';
 import {
   DefensePhase,
   DefenseState,
@@ -134,6 +136,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   // ----- visual triggers -----
   const [flashTrigger, setFlashTrigger] = React.useState(0);
   const [confettiTrigger, setConfettiTrigger] = React.useState(0);
+  const [shakeTrigger, setShakeTrigger] = React.useState(0);
   const [bannerText, setBannerText] = React.useState<{ text: string; color: string } | null>(null);
 
   // ----- Turn timer -----
@@ -211,9 +214,11 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
         color: PALETTE.redHot,
       });
       playSfx('swish');
+      mediumTap();
     } else {
       setBannerText({ text: 'BOT MISSES', color: PALETTE.fog });
       playSfx('brick');
+      mediumTap();
     }
     onShotResolved?.({
       outcome: open ? 'EARLY' : 'LATE',
@@ -227,9 +232,11 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   function applyBlock() {
     setPerfectBlocks((p) => p + 1);
     setConfettiTrigger((c) => c + 1);
+    setShakeTrigger((t) => t + 1);
     setBannerText({ text: 'BLOCK!', color: PALETTE.greenGo });
     playSfx('block');
     playSfx('cheer');
+    heavyTap();
     onShotResolved?.({
       outcome: 'PERFECT',
       botMade: false,
@@ -350,6 +357,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
         if (w !== layout.width || h !== layout.height) setLayout({ width: w, height: h });
       }}
     >
+    <ScreenShake trigger={shakeTrigger} amplitude={5} durationMs={240}>
       <CourtBackground width={width} height={height} court={court} perspective="defense" />
 
       {/* shooter */}
@@ -462,6 +470,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
           </PixelBorderPanel>
         </View>
       )}
+    </ScreenShake>
     </View>
   );
 };

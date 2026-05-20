@@ -20,6 +20,7 @@ import { BallSprite } from '@/components/BallSprite';
 import { PowerUpSprite } from '@/components/PowerUpSprite';
 import { PixelButton } from '@/components/PixelButton';
 import { PixelBorderPanel } from '@/components/PixelBorderPanel';
+import { ScreenShake } from '@/components/ScreenShake';
 import {
   AIM_SENSITIVITY,
   ARC_SLIDE_SPEED,
@@ -41,6 +42,7 @@ import {
 import { FONT, PALETTE, SPACING } from '@/constants/theme';
 import { tickDefender } from '@/game/botAI';
 import { playSfx } from '@/game/audio';
+import { heavyTap, lightTap, mediumTap } from '@/game/haptics';
 import {
   applyPowerUp,
   consumeOnShot,
@@ -197,6 +199,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   const [powerUpFrame, setPowerUpFrame] = React.useState<0 | 1>(0);
   const [defenderFrame, setDefenderFrame] = React.useState<0 | 1>(0);
   const [shotInProgress, setShotInProgress] = React.useState(false);
+  const [shakeTrigger, setShakeTrigger] = React.useState(0);
   const [ballHidden, setBallHidden] = React.useState(false);
   const [resultBanner, setResultBanner] = React.useState<{ text: string; color: string } | null>(null);
   const [turnEnded, setTurnEnded] = React.useState(false);
@@ -308,6 +311,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         setEffects((e) => applyPowerUp(e, powerUp.kind, performance.now()));
         onPowerUpCollected?.(powerUp.kind);
         playSfx('powerup');
+        lightTap();
         setPowerUp(null);
       }
     }, 60);
@@ -457,9 +461,15 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     onShotResolved?.({ result, contested, perfectRelease, points });
     if (result === 'make') {
       playSfx('swish');
-      if (contested) playSfx('cheer');
+      mediumTap();
+      if (contested) {
+        playSfx('cheer');
+        setShakeTrigger((t) => t + 1);
+        heavyTap();
+      }
     } else {
       playSfx('brick');
+      mediumTap();
     }
     setResultBanner({
       text:
@@ -479,8 +489,14 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   // ----- Animated styles -----
   const ballAnimStyle = useAnimatedStyle(() => {
     const half = LAYOUT.ballSpritePx / 2;
+    // Rotate the in-flight ball at 720°/sec for chunky pixel "spin".
+    const rot = ballT.value * 720;
     return {
-      transform: [{ translateX: ballX.value - half }, { translateY: ballY.value - half }],
+      transform: [
+        { translateX: ballX.value - half },
+        { translateY: ballY.value - half },
+        { rotate: `${rot}deg` },
+      ],
     };
   });
 
@@ -571,6 +587,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         }
       }}
     >
+    <ScreenShake trigger={shakeTrigger} amplitude={4} durationMs={220}>
       <CourtBackground width={width} height={height} court={court} perspective="offense" />
 
       <View style={[styles.basketWrap, { top: basketTopY, left: width / 2 - basketSize / 2 }]}>
@@ -725,7 +742,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
           </PixelBorderPanel>
         </View>
       )}
-
+    </ScreenShake>
     </View>
   );
 };

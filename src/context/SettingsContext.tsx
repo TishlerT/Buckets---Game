@@ -1,5 +1,6 @@
 import React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setHapticsEnabled as setHapticsEnabledGlobal } from '@/game/haptics';
 
 export interface Settings {
   muted: boolean;
@@ -42,6 +43,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             const merged = { ...DEFAULTS, ...parsed };
             setSettings(merged);
             mutedFlag = merged.muted;
+            setHapticsEnabledGlobal(merged.hapticsEnabled);
           }
           setLoading(false);
         }
@@ -55,6 +57,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const persist = (next: Settings) => {
     setSettings(next);
     mutedFlag = next.muted;
+    setHapticsEnabledGlobal(next.hapticsEnabled);
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next)).catch(() => {});
   };
 

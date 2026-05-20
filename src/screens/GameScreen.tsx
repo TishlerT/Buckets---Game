@@ -17,8 +17,10 @@ import {
 import { useProgression } from '@/context/ProgressionContext';
 import { xpForGameResult } from '@/game/progression';
 import { startMusic, stopMusic } from '@/game/audio';
+import { PauseButton, PauseMenu } from '@/components/PauseMenu';
 import { RootStackParamList } from '@/navigation';
-import { PALETTE } from '@/constants/theme';
+import { PALETTE, SPACING } from '@/constants/theme';
+import { Pressable } from 'react-native';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Game'>;
 
@@ -38,6 +40,7 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const { progression, awardXp } = useProgression();
   const xpAwardedRef = React.useRef(false);
+  const [paused, setPaused] = React.useState(false);
 
   // Background music: start on first OFFENSE/DEFENSE, stop on END / unmount.
   React.useEffect(() => {
@@ -80,13 +83,15 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const coinWinnerRef = React.useRef<ReturnType<typeof flipCoinForMode>>('P1');
 
-  // Tick the global game timer every second EXCEPT during pre-game phases.
+  // Tick the global game timer every second EXCEPT during pre-game phases
+  // and while paused.
   React.useEffect(() => {
+    if (paused) return;
     if (state.phase !== 'OFFENSE' && state.phase !== 'DEFENSE') return;
     if (state.gameTimeRemainingSec <= 0) return;
     const id = setTimeout(() => dispatch({ type: 'GAME_TIMER_TICK' }), 1000);
     return () => clearTimeout(id);
-  }, [state.phase, state.gameTimeRemainingSec]);
+  }, [state.phase, state.gameTimeRemainingSec, paused]);
 
   const handleOffenseTurnEnd = React.useCallback(
     (pointsScored: number) => {
@@ -194,10 +199,48 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
     }
   };
 
-  return <View style={styles.root}>{renderActiveScreen(state)}</View>;
+  // Pause is only visible during gameplay.
+  const isPlaying = state.phase === 'OFFENSE' || state.phase === 'DEFENSE';
+
+  return (
+    <View style={styles.root}>
+      {renderActiveScreen(state)}
+      {isPlaying && !paused && (
+        <View style={styles.pauseBtnWrap} pointerEvents="box-none">
+          <Pressable
+            accessibilityLabel="PAUSE"
+            accessibilityRole="button"
+            onPress={() => setPaused(true)}
+          >
+            <PauseButton onPress={() => setPaused(true)} />
+          </Pressable>
+        </View>
+      )}
+      {paused && (
+        <PauseMenu
+          onResume={() => setPaused(false)}
+          onQuit={() => {
+            stopMusic();
+            navigation.navigate('Home');
+          }}
+        />
+      )}
+    </View>
+  );
 };
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: PALETTE.black },
   fill: { flex: 1 },
+  pauseBtnWrap: {
+    position: 'absolute',
+    top: 60,
+    right: 0,
+    left: 0,
+    alignItems: 'center',
+    pointerEvents: 'box-none',
+    zIndex: 10,
+  },
 });
+
+void SPACING;
