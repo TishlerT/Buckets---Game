@@ -21,6 +21,8 @@ import { PowerUpSprite } from '@/components/PowerUpSprite';
 import { PixelButton } from '@/components/PixelButton';
 import { PixelBorderPanel } from '@/components/PixelBorderPanel';
 import { ScreenShake } from '@/components/ScreenShake';
+import { StarBurst } from '@/components/StarBurst';
+import { SmokePuff } from '@/components/SmokePuff';
 import {
   AIM_SENSITIVITY,
   ARC_SLIDE_SPEED,
@@ -77,9 +79,14 @@ interface OffenseScreenProps {
   matchScores?: { p1: number; opp: number };
   matchTimeRemainingSec?: number;
   matchMode?: 'vsBot' | 'local2P';
+  /** Active player for scoreboard column placement. */
+  activePlayer?: 'P1' | 'P2' | 'BOT';
+  /** When true, freezes the turn timer (used by GameScreen pause). */
+  paused?: boolean;
   /** Cosmetics from progression. */
   court?: import('@/constants/gameConfig').CourtId;
   defenderVariant?: import('@/constants/gameConfig').DefenderId;
+  ballSkin?: import('@/constants/gameConfig').SkinId;
 }
 
 export interface ShotResolvedEvent {
@@ -129,8 +136,11 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   matchScores,
   matchTimeRemainingSec,
   matchMode = 'vsBot',
+  activePlayer = 'P1',
+  paused = false,
   court = 'playground',
   defenderVariant,
+  ballSkin = 'classic',
 }) => {
   // Measure the play area directly via onLayout so we don't depend on
   // potentially-mismatched useWindowDimensions on web.
@@ -200,6 +210,8 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   const [defenderFrame, setDefenderFrame] = React.useState<0 | 1>(0);
   const [shotInProgress, setShotInProgress] = React.useState(false);
   const [shakeTrigger, setShakeTrigger] = React.useState(0);
+  const [starBurstTrigger, setStarBurstTrigger] = React.useState(0);
+  const [smokeTrigger, setSmokeTrigger] = React.useState(0);
   const [ballHidden, setBallHidden] = React.useState(false);
   const [resultBanner, setResultBanner] = React.useState<{ text: string; color: string } | null>(null);
   const [turnEnded, setTurnEnded] = React.useState(false);
@@ -232,8 +244,9 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   // When the clock hits 0 we stop the timer and surface the TURN OVER overlay.
   // Calling `onTurnEnd` is deferred until the player taps OK so they can see
   // the final score and any in-flight result before the screen changes.
+  // PAUSED: freeze the timer entirely while the pause overlay is up.
   React.useEffect(() => {
-    if (turnEnded) return;
+    if (turnEnded || paused) return;
     if (timeRemaining <= 0) {
       setTurnEnded(true);
       return;
@@ -243,7 +256,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     }
     const id = setTimeout(() => setTimeRemaining((s) => s - 1), 1000);
     return () => clearTimeout(id);
-  }, [timeRemaining, turnEnded]);
+  }, [timeRemaining, turnEnded, paused]);
 
   // If the GLOBAL match timer hits 0, end this turn immediately too
   // — the match clock takes priority over the turn clock.
@@ -465,11 +478,13 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       if (contested) {
         playSfx('cheer');
         setShakeTrigger((t) => t + 1);
+        setStarBurstTrigger((t) => t + 1);
         heavyTap();
       }
     } else {
       playSfx('brick');
       mediumTap();
+      setSmokeTrigger((t) => t + 1);
     }
     setResultBanner({
       text:
@@ -628,12 +643,12 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       {/* player ball or in-flight ball */}
       {!shotInProgress && !ballHidden && (
         <Animated.View style={[styles.absolute, playerAnimStyle]} pointerEvents="none">
-          <BallSprite size={LAYOUT.ballSpritePx} />
+          <BallSprite size={LAYOUT.ballSpritePx} skin={ballSkin} />
         </Animated.View>
       )}
       {shotInProgress && !ballHidden && (
         <Animated.View style={[styles.absolute, ballAnimStyle]} pointerEvents="none">
-          <BallSprite size={LAYOUT.ballSpritePx} />
+          <BallSprite size={LAYOUT.ballSpritePx} skin={ballSkin} />
         </Animated.View>
       )}
 
@@ -694,8 +709,10 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       {matchScores && matchTimeRemainingSec !== undefined ? (
         <MatchScoreboard
           mode={matchMode}
-          p1Score={matchScores.p1 + score}
-          oppScore={matchScores.opp}
+          // In 2P, the active player's live points feed THEIR column. In
+          // vs-bot, P1 is always the active player on offense.
+          p1Score={matchScores.p1 + (activePlayer === 'P1' ? score : 0)}
+          oppScore={matchScores.opp + (activePlayer === 'P2' ? score : 0)}
           turnTimeSec={timeRemaining}
           matchTimeSec={matchTimeRemainingSec}
         />
@@ -731,6 +748,10 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
           </PixelBorderPanel>
         </View>
       )}
+
+      {/* Particle effects: contested-make star burst + brick smoke puff */}
+      <StarBurst trigger={starBurstTrigger} cx={rim.x} cy={rim.y} count={14} maxRadius={140} />
+      <SmokePuff trigger={smokeTrigger} cx={rim.x} cy={rim.y + 24} />
 
       {turnEnded && (
         <View style={styles.turnOver}>

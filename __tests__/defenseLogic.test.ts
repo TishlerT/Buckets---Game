@@ -223,10 +223,10 @@ describe('processSwipe — boundary monotonicity across levels', () => {
       lastOutcome: null,
     };
     const r1 = processSwipe(s1, release + 100);
-    expect(r1.outcome).toBe('PERFECT'); // level 1 perfect = ±280
+    expect(r1.outcome).toBe('PERFECT'); // level 1 perfect = ±180 (after retune)
 
     const s4 = { ...s1, level: 4 as const };
     const r4 = processSwipe(s4, release + 100);
-    expect(r4.outcome).toBe('LATE'); // level 4 perfect = ±80, 100 is past it
+    expect(r4.outcome).toBe('LATE'); // level 4 perfect = ±70, 100 is past it
   });
 });

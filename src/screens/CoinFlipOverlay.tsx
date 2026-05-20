@@ -60,9 +60,9 @@ export const CoinFlipOverlay: React.FC<CoinFlipOverlayProps> = ({ winner, onDone
       {showWinner && (
         <View style={styles.winnerWrap}>
           <Text style={styles.winnerText}>
-            {winner === 'P1' && 'PLAYER 1 ON OFFENSE'}
-            {winner === 'P2' && 'PLAYER 2 ON OFFENSE'}
-            {winner === 'BOT' && 'BOT ON OFFENSE'}
+            {winner === 'P1' && 'YOU GO OFFENSE'}
+            {winner === 'P2' && 'PLAYER 2 GOES OFFENSE'}
+            {winner === 'BOT' && 'BOT GOES — YOU DEFEND'}
           </Text>
         </View>
       )}

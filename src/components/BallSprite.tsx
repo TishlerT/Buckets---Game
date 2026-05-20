@@ -1,12 +1,22 @@
 import React from 'react';
 import Svg, { Rect } from 'react-native-svg';
 import { PALETTE } from '@/constants/theme';
+import { SkinId } from '@/constants/gameConfig';
 
 interface BallSpriteProps {
   size?: number;
   /** Optional rotation in degrees for spin frames. */
   rotation?: number;
+  /** Skin id from progression. Re-tints the orange palette. */
+  skin?: SkinId;
 }
+
+const SKIN_PALETTES: Record<SkinId, { primary: string; shadow: string; line: string }> = {
+  classic: { primary: PALETTE.orangeBall, shadow: PALETTE.orangeShadow, line: PALETTE.black },
+  neon: { primary: PALETTE.greenGo, shadow: '#2a8a2a', line: PALETTE.black },
+  gold: { primary: PALETTE.yellowBright, shadow: '#a8810f', line: PALETTE.black },
+  ghost: { primary: PALETTE.purpleSpace, shadow: '#5a2da0', line: PALETTE.lineWhite },
+};
 
 /**
  * 8-bit basketball drawn as a 10×10 grid of pixel rects.
@@ -37,16 +47,16 @@ const PIXEL_MAP: string[] = [
   '...SSSS...',
 ];
 
-const PIXEL_COLOR: Record<string, string> = {
-  S: PALETTE.orangeShadow,
-  O: PALETTE.orangeBall,
-  L: PALETTE.black,
-};
-
 const COLS = 10;
 const ROWS = 9;
 
-export const BallSprite: React.FC<BallSpriteProps> = ({ size = 48, rotation = 0 }) => {
+export const BallSprite: React.FC<BallSpriteProps> = ({ size = 48, rotation = 0, skin = 'classic' }) => {
+  const palette = SKIN_PALETTES[skin] ?? SKIN_PALETTES.classic;
+  const pixelColor: Record<string, string> = {
+    S: palette.shadow,
+    O: palette.primary,
+    L: palette.line,
+  };
   const pixel = size / COLS;
   const cells: React.ReactElement[] = [];
   for (let r = 0; r < ROWS; r++) {
@@ -54,7 +64,7 @@ export const BallSprite: React.FC<BallSpriteProps> = ({ size = 48, rotation = 0 
     for (let c = 0; c < COLS; c++) {
       const ch = row[c]!;
       if (ch === '.') continue;
-      const color = PIXEL_COLOR[ch];
+      const color = pixelColor[ch];
       if (!color) continue;
       cells.push(
         <Rect

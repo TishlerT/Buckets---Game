@@ -11,7 +11,8 @@ async function clickByLabel(page, label) {
   const rect = await page.evaluate((lbl) => {
     const all = Array.from(document.querySelectorAll('*'));
     for (const el of all) {
-      if ((el.getAttribute && el.getAttribute('aria-label')) === lbl) {
+      const aria = el.getAttribute && el.getAttribute('aria-label');
+      if (aria && (aria === lbl || aria.startsWith(lbl + '  ') || aria.startsWith(lbl + ' '))) {
         const r = el.getBoundingClientRect();
         return { x: r.left, y: r.top, w: r.width, h: r.height };
       }

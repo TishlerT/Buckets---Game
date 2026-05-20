@@ -12,10 +12,18 @@ import { RootStackParamList } from '@/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
+const DEFENDER_TO_LEVEL: Record<string, 1 | 2 | 3 | 4> = {
+  grandpa: 1, recLeague: 2, pro: 3, alien: 4,
+};
+const LEVEL_LABELS: Record<1 | 2 | 3 | 4, string> = {
+  1: 'GRANDPA', 2: 'REC LEAGUE', 3: 'PRO', 4: 'ALIEN',
+};
+
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const { progression, loading } = useProgression();
   const xpInfo = xpProgressInLevel(progression.totalXp);
   const xpPct = Math.min(100, Math.round((xpInfo.xpInLevel / Math.max(1, xpInfo.xpForNextLevel)) * 100));
+  const selectedLevel = DEFENDER_TO_LEVEL[progression.selected.defender] ?? 1;
   return (
   <View style={styles.root}>
     {/* decorative background bouncing balls */}
@@ -46,11 +54,11 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
       <View style={styles.buttons}>
         <PixelButton
-          label="PLAY"
+          label={`PLAY  •  ${LEVEL_LABELS[selectedLevel]}`}
           color={PALETTE.greenGo}
           testID="home.play"
           onPress={() =>
-            navigation.navigate('Game', { mode: 'vsBot', defenderLevel: 1 })
+            navigation.navigate('Game', { mode: 'vsBot', defenderLevel: selectedLevel })
           }
         />
         <View style={{ height: SPACING.md }} />
@@ -59,7 +67,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           color={PALETTE.blueIce}
           testID="home.local2p"
           onPress={() =>
-            navigation.navigate('Game', { mode: 'local2P', defenderLevel: 1 })
+            navigation.navigate('Game', { mode: 'local2P', defenderLevel: selectedLevel })
           }
         />
         <View style={{ height: SPACING.md }} />

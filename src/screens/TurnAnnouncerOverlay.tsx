@@ -26,9 +26,10 @@ export const TurnAnnouncerOverlay: React.FC<TurnAnnouncerOverlayProps> = ({
 
   return (
     <View style={styles.root} pointerEvents="none">
-      <Text style={styles.smallText}>{playerLabel}</Text>
+      <Text style={styles.smallText}>YOUR TURN —</Text>
       <Text style={[styles.bigText, { color: roleColor }]}>{role}</Text>
-      <Text style={styles.smallText}>
+      <Text style={styles.smallText}>{playerLabel}</Text>
+      <Text style={styles.smallTextDim}>
         {role === 'OFFENSE' ? 'SLINGSHOT THE 3' : 'SWIPE UP TO BLOCK'}
       </Text>
     </View>
@@ -49,6 +50,13 @@ const styles = StyleSheet.create({
     color: PALETTE.lineWhite,
     letterSpacing: 2,
     marginVertical: SPACING.md,
+  },
+  smallTextDim: {
+    fontFamily: FONT.family,
+    fontSize: FONT.small,
+    color: PALETTE.fog,
+    letterSpacing: 1,
+    marginTop: SPACING.sm,
   },
   bigText: {
     fontFamily: FONT.family,

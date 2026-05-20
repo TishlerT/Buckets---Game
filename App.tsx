@@ -12,11 +12,8 @@ import {
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { ProgressionProvider } from '@/context/ProgressionContext';
 import { SettingsProvider } from '@/context/SettingsContext';
-import { DefenseScreen } from '@/screens/DefenseScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
-import { OffenseScreen } from '@/screens/OffenseScreen';
-import { PlaceholderScreen } from '@/screens/PlaceholderScreen';
 import { ProgressionScreen } from '@/screens/ProgressionScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { RootStackParamList } from '@/navigation';
@@ -70,51 +67,8 @@ export default function App() {
           >
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Game" component={GameScreen} />
-            <Stack.Screen name="Offense">
-              {({ navigation }) => (
-                <OffenseScreen
-                  defenderLevel={1}
-                  onTurnEnd={() => navigation.navigate('Home')}
-                />
-              )}
-            </Stack.Screen>
-            <Stack.Screen name="Defense">
-              {({ navigation }) => (
-                <DefenseScreen
-                  defenderLevel={1}
-                  onTurnEnd={() => navigation.navigate('Home')}
-                />
-              )}
-            </Stack.Screen>
-            <Stack.Screen name="Score">
-              {({ navigation }) => (
-                <PlaceholderScreen
-                  title="FINAL SCORE"
-                  description="End-of-match screen ships in Phase 4."
-                  onBack={() => navigation.goBack()}
-                />
-              )}
-            </Stack.Screen>
             <Stack.Screen name="Progression" component={ProgressionScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
-            <Stack.Screen name="PassThePhone">
-              {({ navigation }) => (
-                <PlaceholderScreen
-                  title="PASS THE PHONE"
-                  description="Local 2P handoff ships in Phase 4."
-                  onBack={() => navigation.goBack()}
-                />
-              )}
-            </Stack.Screen>
-            <Stack.Screen name="Highlight">
-              {({ navigation }) => (
-                <PlaceholderScreen
-                  title="HIGHLIGHT"
-                  description="Replay + share ships in Phase 8."
-                  onBack={() => navigation.goBack()}
-                />
-              )}
-            </Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
         </ProgressionProvider>

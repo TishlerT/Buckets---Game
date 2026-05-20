@@ -53,6 +53,7 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
   const highlightBufferRef = React.useRef<HighlightSnapshot[]>([]);
   const [highlightToShow, setHighlightToShow] = React.useState<HighlightSnapshot | null>(null);
   const [showingHighlight, setShowingHighlight] = React.useState(false);
+  const contestedMakesRef = React.useRef(0);
 
   // Background music: start on first OFFENSE/DEFENSE, stop on END / unmount.
   React.useEffect(() => {
@@ -75,6 +76,7 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
       const result = xpForGameResult({
         win: state.winner === 'P1',
         perfectBlocks: state.scores.P1.perfectBlocks,
+        contestedMakes: contestedMakesRef.current,
       });
       awardXp(result.total);
     }
@@ -126,6 +128,7 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
   const handleOffenseShot = React.useCallback(
     (e: ShotResolvedEvent) => {
       if (e.result === 'make' && e.contested) {
+        contestedMakesRef.current += 1;
         highlightBufferRef.current.push(
           makeContestedMake({
             points: e.points,
@@ -182,24 +185,37 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
             />
           </View>
         );
-      case 'OFFENSE':
+      case 'OFFENSE': {
+        // Active player gets credited live in the scoreboard; the opponent
+        // column shows whoever isn't currently shooting.
+        const activeIsP1 = s.activePlayer === 'P1';
+        const p1Display = activeIsP1 ? s.scores.P1.points : s.scores.P1.points;
+        const oppDisplay =
+          s.mode === 'vsBot'
+            ? s.scores.BOT.points
+            : (activeIsP1 ? s.scores.P2.points : s.scores.P2.points);
         return (
           <OffenseScreen
             defenderLevel={s.defenderLevel}
             onTurnEnd={handleOffenseTurnEnd}
             onShotResolved={handleOffenseShot}
             onPowerUpCollected={handlePowerUpCollected}
-            playerLabel={s.activePlayer === 'P1' ? 'PLAYER 1' : 'PLAYER 2'}
+            playerLabel={activeIsP1 ? 'PLAYER 1' : 'PLAYER 2'}
             matchScores={{
-              p1: s.scores.P1.points,
-              opp: s.mode === 'vsBot' ? s.scores.BOT.points : s.scores.P2.points,
+              // In 2P, the active player's live score adds to their own column.
+              p1: activeIsP1 ? p1Display : p1Display,
+              opp: oppDisplay,
             }}
+            activePlayer={s.activePlayer}
             matchTimeRemainingSec={s.gameTimeRemainingSec}
             matchMode={s.mode}
+            paused={paused}
             court={progression.selected.court}
             defenderVariant={progression.selected.defender}
+            ballSkin={progression.selected.skin}
           />
         );
+      }
       case 'DEFENSE':
         return (
           <DefenseScreen
@@ -211,8 +227,10 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
               p1: s.scores.P1.points,
               opp: s.mode === 'vsBot' ? s.scores.BOT.points : s.scores.P2.points,
             }}
+            activePlayer={s.activePlayer}
             matchTimeRemainingSec={s.gameTimeRemainingSec}
             matchMode={s.mode}
+            paused={paused}
             doubleJumpAvailable={doubleJumpAvailable}
             court={progression.selected.court}
             shooterVariant={progression.selected.defender}
@@ -237,10 +255,12 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
         return (
           <ScoreScreen
             state={s}
+            contestedMakes={contestedMakesRef.current}
             onRematch={() => {
               setShowingHighlight(false);
               setHighlightToShow(null);
               highlightBufferRef.current = [];
+              contestedMakesRef.current = 0;
               xpAwardedRef.current = false;
               navigation.replace('Game', { mode: s.mode, defenderLevel: s.defenderLevel });
             }}

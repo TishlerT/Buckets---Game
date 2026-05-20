@@ -14,11 +14,6 @@ export interface GameStartParams {
 export type RootStackParamList = {
   Home: undefined;
   Game: GameStartParams;
-  Offense: undefined;
-  Defense: undefined;
-  Score: undefined;
   Progression: undefined;
   Settings: undefined;
-  PassThePhone: { nextRole: 'offense' | 'defense'; nextPlayer: 1 | 2 };
-  Highlight: undefined;
 };

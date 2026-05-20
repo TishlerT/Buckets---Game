@@ -15,14 +15,21 @@ import { FONT, PALETTE, SPACING } from '@/constants/theme';
 
 interface Props {
   state: GameState;
-  /** XP previously earned (for display); pass 0 if first session. */
   onRematch: () => void;
   onMainMenu: () => void;
   /** When provided, a HIGHLIGHT button appears above REMATCH. */
   onShowHighlight?: () => void;
+  /** Optional count of contested makes for XP breakdown. */
+  contestedMakes?: number;
 }
 
-export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu, onShowHighlight }) => {
+export const ScoreScreen: React.FC<Props> = ({
+  state,
+  onRematch,
+  onMainMenu,
+  onShowHighlight,
+  contestedMakes = 0,
+}) => {
   const winner = state.winner ?? 'TIE';
   const p1 = state.scores.P1;
   const opp =
@@ -34,7 +41,8 @@ export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu, onS
   const playerWonVsBot = state.mode === 'vsBot' && winner === 'P1';
   const xpFromGame = playerWonVsBot ? XP_WIN : XP_LOSS;
   const xpFromBlocks = p1.perfectBlocks * XP_PERFECT_BLOCK_BONUS;
-  const xpTotal = state.mode === 'vsBot' ? xpFromGame + xpFromBlocks : 0;
+  const xpFromContested = contestedMakes * XP_CONTESTED_MAKE_BONUS;
+  const xpTotal = state.mode === 'vsBot' ? xpFromGame + xpFromBlocks + xpFromContested : 0;
 
   const titleText =
     winner === 'TIE'
@@ -95,6 +103,11 @@ export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu, onS
               {p1.perfectBlocks > 0 && (
                 <Text style={styles.xpDetail}>
                   {p1.perfectBlocks} BLOCK{p1.perfectBlocks === 1 ? '' : 'S'} +{xpFromBlocks}
+                </Text>
+              )}
+              {contestedMakes > 0 && (
+                <Text style={styles.xpDetail}>
+                  {contestedMakes} CONTESTED +{xpFromContested}
                 </Text>
               )}
             </PixelBorderPanel>

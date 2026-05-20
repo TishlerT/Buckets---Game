@@ -20,6 +20,7 @@ import {
   SkinId,
   SKIN_UNLOCK_COST,
   UNLOCK_POINTS_PER_LEVEL,
+  XP_CONTESTED_MAKE_BONUS,
   XP_LEVEL_EXP,
   XP_LOSS,
   XP_PER_LEVEL_BASE,
@@ -113,10 +114,15 @@ export function xpProgressInLevel(totalXp: number): {
 export function xpForGameResult(args: {
   win: boolean;
   perfectBlocks: number;
-}): { total: number; breakdown: { base: number; blockBonus: number } } {
+  contestedMakes?: number;
+}): { total: number; breakdown: { base: number; blockBonus: number; contestedBonus: number } } {
   const base = args.win ? XP_WIN : XP_LOSS;
   const blockBonus = args.perfectBlocks * XP_PERFECT_BLOCK_BONUS;
-  return { total: base + blockBonus, breakdown: { base, blockBonus } };
+  const contestedBonus = (args.contestedMakes ?? 0) * XP_CONTESTED_MAKE_BONUS;
+  return {
+    total: base + blockBonus + contestedBonus,
+    breakdown: { base, blockBonus, contestedBonus },
+  };
 }
 
 // ---------------------------------------------------------------------------

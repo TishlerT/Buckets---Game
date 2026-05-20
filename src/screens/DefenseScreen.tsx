@@ -17,6 +17,7 @@ import {
   POINTS_BLOCK_FOR_SHOOTER,
   POINTS_CONTESTED_MAKE,
   POINTS_OPEN_MAKE,
+  POST_RESULT_PAUSE_MS,
   SWIPE_UP_MIN_DISTANCE_PX,
   SWIPE_UP_MIN_VELOCITY,
   TURN_DURATION_SEC,
@@ -46,6 +47,10 @@ interface DefenseScreenProps {
   matchScores?: { p1: number; opp: number };
   matchTimeRemainingSec?: number;
   matchMode?: 'vsBot' | 'local2P';
+  /** Active player on this defense turn. */
+  activePlayer?: 'P1' | 'P2' | 'BOT';
+  /** When true, freezes the turn timer + FSM tick (pause). */
+  paused?: boolean;
   /** Cross-turn power-up effects carried over from the previous offense turn. */
   doubleJumpAvailable?: boolean;
   /** Cosmetics from progression. */
@@ -91,6 +96,8 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   matchScores,
   matchTimeRemainingSec,
   matchMode = 'vsBot',
+  activePlayer = 'P1',
+  paused = false,
   doubleJumpAvailable = false,
   court = 'playground',
   shooterVariant,
@@ -141,7 +148,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
 
   // ----- Turn timer -----
   React.useEffect(() => {
-    if (turnEnded) return;
+    if (turnEnded || paused) return;
     if (timeRemaining <= 0) {
       setTurnEnded(true);
       return;
@@ -151,7 +158,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
     }
     const id = setTimeout(() => setTimeRemaining((s) => s - 1), 1000);
     return () => clearTimeout(id);
-  }, [timeRemaining, turnEnded]);
+  }, [timeRemaining, turnEnded, paused]);
 
   // Global match clock takes priority — if it hits 0 mid-turn, end the turn.
   React.useEffect(() => {
@@ -167,7 +174,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   // the FSM's tick produced a "fresh" RESULT we haven't applied yet.
   const lastAppliedOutcomeAtRef = React.useRef(0);
   React.useEffect(() => {
-    if (turnEnded) return;
+    if (turnEnded || paused) return;
     let raf = 0;
     const tick = () => {
       const now = performance.now();
@@ -200,7 +207,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
     return () => cancelAnimationFrame(raf);
     // intentional: applyBotShot/applyBlock close over current state via refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turnEnded]);
+  }, [turnEnded, paused]);
 
   // ----- Outcome handlers -----
   function applyBotShot(open: boolean) {
@@ -226,7 +233,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
       botPoints: points,
       perfectBlock: false,
     });
-    setTimeout(() => setBannerText(null), 900);
+    setTimeout(() => setBannerText(null), POST_RESULT_PAUSE_MS - 100);
   }
 
   function applyBlock() {
@@ -243,7 +250,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
       botPoints: POINTS_BLOCK_FOR_SHOOTER,
       perfectBlock: true,
     });
-    setTimeout(() => setBannerText(null), 900);
+    setTimeout(() => setBannerText(null), POST_RESULT_PAUSE_MS - 100);
   }
 
   /** Called when the player completes a swipe-up gesture. */
