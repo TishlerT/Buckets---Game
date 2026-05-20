@@ -4,12 +4,19 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BouncingBall } from '@/components/BouncingBall';
 import { PixelButton } from '@/components/PixelButton';
+import { PixelBorderPanel } from '@/components/PixelBorderPanel';
+import { useProgression } from '@/context/ProgressionContext';
+import { xpProgressInLevel } from '@/game/progression';
 import { FONT, PALETTE, SPACING } from '@/constants/theme';
 import { RootStackParamList } from '@/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
-export const HomeScreen: React.FC<Props> = ({ navigation }) => (
+export const HomeScreen: React.FC<Props> = ({ navigation }) => {
+  const { progression, loading } = useProgression();
+  const xpInfo = xpProgressInLevel(progression.totalXp);
+  const xpPct = Math.min(100, Math.round((xpInfo.xpInLevel / Math.max(1, xpInfo.xpForNextLevel)) * 100));
+  return (
   <View style={styles.root}>
     {/* decorative background bouncing balls */}
     <BouncingBall xRatio={0.15} size={48} amplitude={120} durationMs={1100} bottomOffset={40} />
@@ -20,6 +27,21 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => (
       <View style={styles.titleWrap}>
         <Text style={styles.title}>BUCKETS</Text>
         <Text style={styles.subtitle}>8-bit hoops • turn-based</Text>
+        {!loading && (
+          <View style={styles.xpRow}>
+            <PixelBorderPanel innerPadding={6} color={PALETTE.midnight}>
+              <View style={styles.xpInner}>
+                <Text style={styles.xpLevelLabel}>LV {xpInfo.level}</Text>
+                <View style={styles.xpBarTrack}>
+                  <View style={[styles.xpBarFill, { width: `${xpPct}%` }]} />
+                </View>
+                <Text style={styles.xpDetailLabel}>
+                  {xpInfo.xpInLevel}/{xpInfo.xpForNextLevel}
+                </Text>
+              </View>
+            </PixelBorderPanel>
+          </View>
+        )}
       </View>
 
       <View style={styles.buttons}>
@@ -60,7 +82,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => (
       <Text style={styles.footer}>v0.1 • most threes wins</Text>
     </SafeAreaView>
   </View>
-);
+  );
+};
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: PALETTE.midnight, overflow: 'hidden' },
@@ -81,6 +104,38 @@ const styles = StyleSheet.create({
     color: PALETTE.lineWhite,
     marginTop: SPACING.md,
     letterSpacing: 1,
+  },
+  xpRow: {
+    marginTop: SPACING.md,
+    minWidth: 220,
+  },
+  xpInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  xpLevelLabel: {
+    fontFamily: FONT.family,
+    fontSize: FONT.tiny,
+    color: PALETTE.yellowBright,
+    letterSpacing: 1,
+    marginRight: SPACING.sm,
+  },
+  xpBarTrack: {
+    flex: 1,
+    height: 8,
+    backgroundColor: PALETTE.shadow,
+    borderWidth: 1,
+    borderColor: PALETTE.black,
+  },
+  xpBarFill: {
+    height: '100%',
+    backgroundColor: PALETTE.greenGo,
+  },
+  xpDetailLabel: {
+    fontFamily: FONT.family,
+    fontSize: FONT.tiny,
+    color: PALETTE.fog,
+    marginLeft: SPACING.sm,
   },
   buttons: {
     width: '100%',

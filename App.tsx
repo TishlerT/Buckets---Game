@@ -10,11 +10,13 @@ import {
   useFonts,
 } from '@expo-google-fonts/press-start-2p';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ProgressionProvider } from '@/context/ProgressionContext';
 import { DefenseScreen } from '@/screens/DefenseScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { OffenseScreen } from '@/screens/OffenseScreen';
 import { PlaceholderScreen } from '@/screens/PlaceholderScreen';
+import { ProgressionScreen } from '@/screens/ProgressionScreen';
 import { RootStackParamList } from '@/navigation';
 import { PALETTE } from '@/constants/theme';
 
@@ -52,6 +54,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
+        <ProgressionProvider>
         <StatusBar style="light" />
         <NavigationContainer theme={navTheme}>
           <Stack.Navigator
@@ -89,15 +92,7 @@ export default function App() {
                 />
               )}
             </Stack.Screen>
-            <Stack.Screen name="Progression">
-              {({ navigation }) => (
-                <PlaceholderScreen
-                  title="PROGRESSION"
-                  description="XP + unlock shop ships in Phase 5."
-                  onBack={() => navigation.goBack()}
-                />
-              )}
-            </Stack.Screen>
+            <Stack.Screen name="Progression" component={ProgressionScreen} />
             <Stack.Screen name="Settings">
               {({ navigation }) => (
                 <PlaceholderScreen
@@ -127,6 +122,7 @@ export default function App() {
             </Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
+        </ProgressionProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

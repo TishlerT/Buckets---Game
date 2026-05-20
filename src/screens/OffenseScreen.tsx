@@ -74,6 +74,9 @@ interface OffenseScreenProps {
   matchScores?: { p1: number; opp: number };
   matchTimeRemainingSec?: number;
   matchMode?: 'vsBot' | 'local2P';
+  /** Cosmetics from progression. */
+  court?: import('@/constants/gameConfig').CourtId;
+  defenderVariant?: import('@/constants/gameConfig').DefenderId;
 }
 
 export interface ShotResolvedEvent {
@@ -123,6 +126,8 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   matchScores,
   matchTimeRemainingSec,
   matchMode = 'vsBot',
+  court = 'playground',
+  defenderVariant,
 }) => {
   // Measure the play area directly via onLayout so we don't depend on
   // potentially-mismatched useWindowDimensions on web.
@@ -555,7 +560,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         }
       }}
     >
-      <CourtBackground width={width} height={height} court="playground" perspective="offense" />
+      <CourtBackground width={width} height={height} court={court} perspective="offense" />
 
       <View style={[styles.basketWrap, { top: basketTopY, left: width / 2 - basketSize / 2 }]}>
         <BasketSprite size={basketSize} big={effects.biggerRimNextShot} />
@@ -564,7 +569,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       <Animated.View style={[styles.absolute, defenderAnimStyle]} pointerEvents="none">
         <DefenderSprite
           size={LAYOUT.defenderSpritePx}
-          variant={DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
+          variant={defenderVariant ?? DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
           frame={defenderFrame}
           frozen={isActive(effects.iceDefenderExpiresAt, now)}
         />

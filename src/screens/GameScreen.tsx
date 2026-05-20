@@ -14,6 +14,8 @@ import {
   gameReducer,
   initGameState,
 } from '@/game/gameLoop';
+import { useProgression } from '@/context/ProgressionContext';
+import { xpForGameResult } from '@/game/progression';
 import { RootStackParamList } from '@/navigation';
 import { PALETTE } from '@/constants/theme';
 
@@ -32,6 +34,23 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
   // Cross-turn power-up state. `doubleJumpAvailable` carries from offense
   // (when collected) into the next defense turn.
   const [doubleJumpAvailable, setDoubleJumpAvailable] = React.useState(false);
+
+  const { progression, awardXp } = useProgression();
+  const xpAwardedRef = React.useRef(false);
+
+  // Award XP on first transition into END phase (vs-bot only — no XP in 2P
+  // because the device is shared and we'd need per-account tracking).
+  React.useEffect(() => {
+    if (state.phase !== 'END') return;
+    if (xpAwardedRef.current) return;
+    if (state.mode !== 'vsBot') return;
+    xpAwardedRef.current = true;
+    const result = xpForGameResult({
+      win: state.winner === 'P1',
+      perfectBlocks: state.scores.P1.perfectBlocks,
+    });
+    awardXp(result.total);
+  }, [state.phase, state.mode, state.winner, state.scores, awardXp]);
 
   // Schedule a coin-flip resolution exactly once at the start.
   React.useEffect(() => {
@@ -121,6 +140,8 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
             }}
             matchTimeRemainingSec={s.gameTimeRemainingSec}
             matchMode={s.mode}
+            court={progression.selected.court}
+            defenderVariant={progression.selected.defender}
           />
         );
       case 'DEFENSE':
@@ -137,6 +158,8 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
             matchTimeRemainingSec={s.gameTimeRemainingSec}
             matchMode={s.mode}
             doubleJumpAvailable={doubleJumpAvailable}
+            court={progression.selected.court}
+            shooterVariant={progression.selected.defender}
           />
         );
       case 'PASS_PHONE':

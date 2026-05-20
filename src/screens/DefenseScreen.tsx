@@ -45,6 +45,9 @@ interface DefenseScreenProps {
   matchMode?: 'vsBot' | 'local2P';
   /** Cross-turn power-up effects carried over from the previous offense turn. */
   doubleJumpAvailable?: boolean;
+  /** Cosmetics from progression. */
+  court?: import('@/constants/gameConfig').CourtId;
+  shooterVariant?: DefenderId;
 }
 
 export interface DefenseShotResolved {
@@ -86,6 +89,8 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   matchTimeRemainingSec,
   matchMode = 'vsBot',
   doubleJumpAvailable = false,
+  court = 'playground',
+  shooterVariant,
 }) => {
   const { width: winW, height: winH } = useWindowDimensions();
   const [layout, setLayout] = React.useState<{ width: number; height: number }>({
@@ -337,7 +342,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
         if (w !== layout.width || h !== layout.height) setLayout({ width: w, height: h });
       }}
     >
-      <CourtBackground width={width} height={height} court="playground" perspective="defense" />
+      <CourtBackground width={width} height={height} court={court} perspective="defense" />
 
       {/* shooter */}
       <View
@@ -347,7 +352,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
         <ShooterSprite
           size={shooterSize}
           frame={frame}
-          variant={DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
+          variant={shooterVariant ?? DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
           flashing={flashing}
         />
       </View>
