@@ -1,3 +1,13 @@
+# Expo / React Native
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.metro-health-check*
+/ios
+/android
+*.tsbuildinfo
+
 # Logs
 logs
 *.log
