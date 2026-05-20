@@ -11,6 +11,7 @@ import {
 } from '@expo-google-fonts/press-start-2p';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { DefenseScreen } from '@/screens/DefenseScreen';
+import { GameScreen } from '@/screens/GameScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { OffenseScreen } from '@/screens/OffenseScreen';
 import { PlaceholderScreen } from '@/screens/PlaceholderScreen';
@@ -62,15 +63,7 @@ export default function App() {
             }}
           >
             <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Game">
-              {({ navigation }) => (
-                <PlaceholderScreen
-                  title="GAME"
-                  description="A vs-bot or local 2P match begins here in Phase 4."
-                  onBack={() => navigation.goBack()}
-                />
-              )}
-            </Stack.Screen>
+            <Stack.Screen name="Game" component={GameScreen} />
             <Stack.Screen name="Offense">
               {({ navigation }) => (
                 <OffenseScreen

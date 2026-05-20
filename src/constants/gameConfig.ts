@@ -194,10 +194,11 @@ export const POWERUP_WEIGHTS_OFFENSE: Record<PowerUpKind, number> = {
 };
 
 /**
- * While Phase 4 is incomplete, restrict offense spawns to Bigger Rim only
- * (per Phase 2 spec). Phase 4 flips this to false to enable the full pool.
+ * Phase 2 spawned only Bigger Rim. Phase 4 enables the full weighted pool
+ * (biggerRim, speedBoost, iceDefender, ghostShot, doubleJump). Set this to
+ * `true` to revert to Phase 2 behavior for testing balance.
  */
-export const PHASE2_ONLY_BIGGER_RIM = true;
+export const PHASE2_ONLY_BIGGER_RIM = false;
 
 // ---------------------------------------------------------------------------
 // Progression — XP and unlocks
