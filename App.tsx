@@ -11,12 +11,14 @@ import {
 } from '@expo-google-fonts/press-start-2p';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { ProgressionProvider } from '@/context/ProgressionContext';
+import { SettingsProvider } from '@/context/SettingsContext';
 import { DefenseScreen } from '@/screens/DefenseScreen';
 import { GameScreen } from '@/screens/GameScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { OffenseScreen } from '@/screens/OffenseScreen';
 import { PlaceholderScreen } from '@/screens/PlaceholderScreen';
 import { ProgressionScreen } from '@/screens/ProgressionScreen';
+import { SettingsScreen } from '@/screens/SettingsScreen';
 import { RootStackParamList } from '@/navigation';
 import { PALETTE } from '@/constants/theme';
 
@@ -54,6 +56,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
+        <SettingsProvider>
         <ProgressionProvider>
         <StatusBar style="light" />
         <NavigationContainer theme={navTheme}>
@@ -93,15 +96,7 @@ export default function App() {
               )}
             </Stack.Screen>
             <Stack.Screen name="Progression" component={ProgressionScreen} />
-            <Stack.Screen name="Settings">
-              {({ navigation }) => (
-                <PlaceholderScreen
-                  title="SETTINGS"
-                  description="Mute toggle + haptics ship in Phase 6/7."
-                  onBack={() => navigation.goBack()}
-                />
-              )}
-            </Stack.Screen>
+            <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="PassThePhone">
               {({ navigation }) => (
                 <PlaceholderScreen
@@ -123,6 +118,7 @@ export default function App() {
           </Stack.Navigator>
         </NavigationContainer>
         </ProgressionProvider>
+        </SettingsProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

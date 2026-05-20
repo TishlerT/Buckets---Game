@@ -40,6 +40,7 @@ import {
 } from '@/constants/gameConfig';
 import { FONT, PALETTE, SPACING } from '@/constants/theme';
 import { tickDefender } from '@/game/botAI';
+import { playSfx } from '@/game/audio';
 import {
   applyPowerUp,
   consumeOnShot,
@@ -234,6 +235,9 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       setTurnEnded(true);
       return;
     }
+    if (timeRemaining <= 5 && timeRemaining > 0) {
+      playSfx('beep');
+    }
     const id = setTimeout(() => setTimeRemaining((s) => s - 1), 1000);
     return () => clearTimeout(id);
   }, [timeRemaining, turnEnded]);
@@ -303,6 +307,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       if (Math.abs(playerPx - puPx) <= POWERUP_PICKUP_RADIUS_PX) {
         setEffects((e) => applyPowerUp(e, powerUp.kind, performance.now()));
         onPowerUpCollected?.(powerUp.kind);
+        playSfx('powerup');
         setPowerUp(null);
       }
     }, 60);
@@ -450,6 +455,12 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   ) {
     setScore((s) => s + points);
     onShotResolved?.({ result, contested, perfectRelease, points });
+    if (result === 'make') {
+      playSfx('swish');
+      if (contested) playSfx('cheer');
+    } else {
+      playSfx('brick');
+    }
     setResultBanner({
       text:
         result === 'make'

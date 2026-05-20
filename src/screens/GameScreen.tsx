@@ -16,6 +16,7 @@ import {
 } from '@/game/gameLoop';
 import { useProgression } from '@/context/ProgressionContext';
 import { xpForGameResult } from '@/game/progression';
+import { startMusic, stopMusic } from '@/game/audio';
 import { RootStackParamList } from '@/navigation';
 import { PALETTE } from '@/constants/theme';
 
@@ -37,6 +38,17 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
 
   const { progression, awardXp } = useProgression();
   const xpAwardedRef = React.useRef(false);
+
+  // Background music: start on first OFFENSE/DEFENSE, stop on END / unmount.
+  React.useEffect(() => {
+    if (state.phase === 'OFFENSE' || state.phase === 'DEFENSE') {
+      startMusic(0.35);
+    } else if (state.phase === 'END') {
+      stopMusic();
+    }
+    return () => { /* don't stop on every effect re-run */ };
+  }, [state.phase]);
+  React.useEffect(() => () => stopMusic(), []);
 
   // Award XP on first transition into END phase (vs-bot only — no XP in 2P
   // because the device is shared and we'd need per-account tracking).

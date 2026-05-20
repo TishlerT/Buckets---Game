@@ -22,6 +22,7 @@ import {
 } from '@/constants/gameConfig';
 import { FONT, PALETTE, SPACING } from '@/constants/theme';
 import { botShotResult } from '@/game/botAI';
+import { playSfx } from '@/game/audio';
 import {
   DefensePhase,
   DefenseState,
@@ -142,6 +143,9 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
       setTurnEnded(true);
       return;
     }
+    if (timeRemaining <= 5 && timeRemaining > 0) {
+      playSfx('beep');
+    }
     const id = setTimeout(() => setTimeRemaining((s) => s - 1), 1000);
     return () => clearTimeout(id);
   }, [timeRemaining, turnEnded]);
@@ -206,8 +210,10 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
         text: open ? `BOT BUCKET (+${points})` : `BOT MAKE (+${points})`,
         color: PALETTE.redHot,
       });
+      playSfx('swish');
     } else {
       setBannerText({ text: 'BOT MISSES', color: PALETTE.fog });
+      playSfx('brick');
     }
     onShotResolved?.({
       outcome: open ? 'EARLY' : 'LATE',
@@ -222,6 +228,8 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
     setPerfectBlocks((p) => p + 1);
     setConfettiTrigger((c) => c + 1);
     setBannerText({ text: 'BLOCK!', color: PALETTE.greenGo });
+    playSfx('block');
+    playSfx('cheer');
     onShotResolved?.({
       outcome: 'PERFECT',
       botMade: false,

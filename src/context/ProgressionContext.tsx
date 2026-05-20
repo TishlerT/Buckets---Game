@@ -9,6 +9,7 @@ import {
   selectItem,
   UnlockCategory,
 } from '@/game/progression';
+import { playSfx } from '@/game/audio';
 
 interface ProgressionContextValue {
   progression: Progression;
@@ -50,6 +51,7 @@ export const ProgressionProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const r = applyXp(progression, xp);
     setProgression(r.next);
     saveProgression(r.next);
+    if (r.levelsGained > 0) playSfx('fanfare');
     return { levelsGained: r.levelsGained, pointsGained: r.pointsGained };
   };
 
