@@ -193,6 +193,12 @@ export const POWERUP_WEIGHTS_OFFENSE: Record<PowerUpKind, number> = {
   doubleJump: 0.5, // useful on defense; still spawnable but rarer.
 };
 
+/**
+ * While Phase 4 is incomplete, restrict offense spawns to Bigger Rim only
+ * (per Phase 2 spec). Phase 4 flips this to false to enable the full pool.
+ */
+export const PHASE2_ONLY_BIGGER_RIM = true;
+
 // ---------------------------------------------------------------------------
 // Progression — XP and unlocks
 // ---------------------------------------------------------------------------
@@ -229,6 +235,51 @@ export const SKIN_UNLOCK_COST: Record<SkinId, number> = {
   gold: 5,
   ghost: 8,
 };
+
+// ---------------------------------------------------------------------------
+// Layout / screen geometry
+// ---------------------------------------------------------------------------
+//
+// These ratios drive the OffenseScreen and DefenseScreen layouts. They keep
+// the visual proportions consistent across phone form factors. Each is a
+// fraction of the play area's width/height.
+
+export const LAYOUT = {
+  /** Basket sprite width as a fraction of screen width (capped by px). */
+  basketWidthFraction: 0.42,
+  basketWidthMaxPx: 180,
+  /** Basket sprite top position as a fraction of screen height. */
+  basketTopFraction: 0.06,
+  /** Player Y as a fraction of screen height — where the player ball sits. */
+  playerYFraction: 0.55,
+  /** Padding from each side, as a fraction of screen width, where arc starts/ends. */
+  arcSidePaddingFraction: 0.08,
+  /** Slingshot zone height as a fraction of screen height. */
+  shootZoneHeightFraction: 0.4,
+  /** Sprite size for player/defender on offense screen, in px. */
+  defenderSpritePx: 64,
+  ballSpritePx: 32,
+  /** Number of segments to dash the trajectory preview. */
+  trajectoryDashSegments: 12,
+  /** Defender draws this many px above the player. */
+  defenderYOffsetPx: 100,
+  /** When evaluating contested distance, defender Y is offset from player by this much. */
+  defenderToPlayerYContestOffset: 50,
+  /** SafeArea-friendly bottom inset for the shoot zone label. */
+  shootLabelTopPaddingPx: 6,
+} as const;
+
+// ---------------------------------------------------------------------------
+// Sprite geometry
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the rim center sits inside the basket sprite, as a fraction of the
+ * sprite's own height. Used to compute the world-space rim position from the
+ * basket sprite's top.
+ */
+export const BASKET_RIM_Y_FACTOR = 0.55;
+export const BASKET_RIM_PIXEL_FUDGE_PX = 4;
 
 // ---------------------------------------------------------------------------
 // Highlight reel

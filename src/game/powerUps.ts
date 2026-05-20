@@ -12,6 +12,7 @@
 import {
   GHOST_SHOT_DURATION_MS,
   ICE_DEFENDER_DURATION_MS,
+  PHASE2_ONLY_BIGGER_RIM,
   PowerUpKind,
   POWERUP_LIFETIME_MS,
   POWERUP_SPAWN_INTERVAL_MS_MAX,
@@ -47,8 +48,13 @@ export const EMPTY_EFFECTS: PlayerEffects = {
 
 /**
  * Pick a kind by weighted random.
+ *
+ * While `PHASE2_ONLY_BIGGER_RIM` is true (Phase 2 spec compliance), every
+ * spawn is forced to be a Bigger Rim. Phase 4 flips the flag and unlocks
+ * the full weighted pool.
  */
 export function pickRandomPowerUpKind(rng: () => number = Math.random): PowerUpKind {
+  if (PHASE2_ONLY_BIGGER_RIM) return 'biggerRim';
   const entries = Object.entries(POWERUP_WEIGHTS_OFFENSE) as [PowerUpKind, number][];
   const total = entries.reduce((acc, [, w]) => acc + w, 0);
   let r = rng() * total;

@@ -12,7 +12,7 @@ import Animated, {
 import Svg, { Circle, Line } from 'react-native-svg';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CourtBackground } from '@/components/CourtBackground';
-import { BasketSprite, BASKET_RIM_OFFSET_FACTOR } from '@/components/BasketSprite';
+import { BasketSprite } from '@/components/BasketSprite';
 import { DefenderSprite } from '@/components/DefenderSprite';
 import { PowerMeter } from '@/components/PowerMeter';
 import { BallSprite } from '@/components/BallSprite';
@@ -20,8 +20,12 @@ import { PowerUpSprite } from '@/components/PowerUpSprite';
 import { PixelButton } from '@/components/PixelButton';
 import { PixelBorderPanel } from '@/components/PixelBorderPanel';
 import {
+  AIM_SENSITIVITY,
   ARC_SLIDE_SPEED,
-  PERFECT_RELEASE_WINDOW_MS,
+  BASKET_RIM_PIXEL_FUDGE_PX,
+  BASKET_RIM_Y_FACTOR,
+  DefenderId,
+  LAYOUT,
   PLAYER_ARC_MAX,
   PLAYER_ARC_MIN,
   POWERUP_LIFETIME_MS,
@@ -30,7 +34,6 @@ import {
   PULL_DEADZONE_PX,
   PULL_MAX_PX,
   PULL_MIN_FOR_RELEASE_PX,
-  RELEASE_HOLD_TARGET_MS,
   SPEED_BOOST_MULTIPLIER,
   TURN_DURATION_SEC,
 } from '@/constants/gameConfig';
@@ -47,6 +50,7 @@ import {
   spawnPowerUp,
 } from '@/game/powerUps';
 import {
+  aimFromPull,
   computeFlight,
   isCancelledRelease,
   pullToPower,
@@ -70,6 +74,13 @@ export interface ShotResolvedEvent {
   perfectRelease: boolean;
   points: number;
 }
+
+const DEFENDER_LEVEL_TO_VARIANT: Record<1 | 2 | 3 | 4, DefenderId> = {
+  1: 'grandpa',
+  2: 'recLeague',
+  3: 'pro',
+  4: 'alien',
+};
 
 /**
  * Offense screen — slingshot to shoot, drag horizontally up top to slide.
@@ -109,18 +120,18 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   });
   const { width, height } = layout.width === 0 ? { width: 360, height: 640 } : layout;
 
-  // ----- Layout -----
-  const basketSize = Math.min(width * 0.42, 180);
-  const basketTopY = height * 0.06;
+  // ----- Layout (all driven by LAYOUT in gameConfig) -----
+  const basketSize = Math.min(width * LAYOUT.basketWidthFraction, LAYOUT.basketWidthMaxPx);
+  const basketTopY = height * LAYOUT.basketTopFraction;
   const rim = {
     x: width / 2,
-    y: basketTopY + basketSize * (10 / 16) * BASKET_RIM_OFFSET_FACTOR + 4,
+    y: basketTopY + basketSize * (10 / 16) * BASKET_RIM_Y_FACTOR + BASKET_RIM_PIXEL_FUDGE_PX,
   };
-  const playerY = height * 0.55;
-  const arcLeftX = width * 0.08;
-  const arcRightX = width * 0.92;
+  const playerY = height * LAYOUT.playerYFraction;
+  const arcLeftX = width * LAYOUT.arcSidePaddingFraction;
+  const arcRightX = width * (1 - LAYOUT.arcSidePaddingFraction);
   const arcLengthPx = arcRightX - arcLeftX;
-  const shootZoneTop = playerY + 40;
+  const shootZoneTop = height * (1 - LAYOUT.shootZoneHeightFraction);
 
   // ----- UI-thread shared state -----
   const playerArcPos = useSharedValue(0.5);
@@ -139,9 +150,21 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   const power = useSharedValue(0);
   const pullStartedAtMs = useSharedValue(0);
 
+  /** UI-thread mirror of shotInProgress to gate worklet onBegin. */
+  const shotInProgressShared = useSharedValue(0); // 0 = idle, 1 = busy
+  const turnEndedShared = useSharedValue(0);
+
+  /** Flight bezier params as shared values so worklets can sample them
+   * without dipping into a JS-thread ref (which is not reliably worklet-safe). */
+  const flightStartX = useSharedValue(0);
+  const flightStartY = useSharedValue(0);
+  const flightApexX = useSharedValue(0);
+  const flightApexY = useSharedValue(0);
+  const flightEndX = useSharedValue(0);
+  const flightEndY = useSharedValue(0);
+
   /** Flight progress 0..1 — drives ballX/Y via reactor. */
   const ballT = useSharedValue(0);
-  const flightRef = React.useRef<ShotFlight | null>(null);
   const ballX = useSharedValue(0);
   const ballY = useSharedValue(0);
 
@@ -167,6 +190,14 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   // Dev telemetry — silenced; flip to setState to re-enable for debugging.
   const setDebugMsg = (_s: string) => {};
 
+  // Mirror JS state into shared values for worklet access.
+  React.useEffect(() => {
+    shotInProgressShared.value = shotInProgress ? 1 : 0;
+  }, [shotInProgress, shotInProgressShared]);
+  React.useEffect(() => {
+    turnEndedShared.value = turnEnded ? 1 : 0;
+  }, [turnEnded, turnEndedShared]);
+
   // ----- speedBoostMul reactivity -----
   React.useEffect(() => {
     const id = setInterval(() => {
@@ -177,16 +208,18 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   }, [effects.speedBoostExpiresAt, speedBoostMul]);
 
   // ----- Turn timer -----
+  // When the clock hits 0 we stop the timer and surface the TURN OVER overlay.
+  // Calling `onTurnEnd` is deferred until the player taps OK so they can see
+  // the final score and any in-flight result before the screen changes.
   React.useEffect(() => {
     if (turnEnded) return;
     if (timeRemaining <= 0) {
       setTurnEnded(true);
-      onTurnEnd?.(scoreRef.current);
       return;
     }
     const id = setTimeout(() => setTimeRemaining((s) => s - 1), 1000);
     return () => clearTimeout(id);
-  }, [timeRemaining, onTurnEnd, turnEnded]);
+  }, [timeRemaining, turnEnded]);
 
   // ----- Defender tick -----
   React.useEffect(() => {
@@ -273,7 +306,9 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     .maxPointers(1)
     .onBegin(() => {
       'worklet';
-      if (shotInProgress) return;
+      // Read shared values, NOT React state (closure would be stale).
+      if (shotInProgressShared.value === 1) return;
+      if (turnEndedShared.value === 1) return;
       pullDX.value = 0;
       pullDY.value = 0;
       power.value = 0;
@@ -312,6 +347,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   /** Resolve a release on the JS thread. */
   function handleRelease(pull: { x: number; y: number }, heldMs: number) {
     if (shotInProgress) return;
+    if (turnEnded) return;
     if (isCancelledRelease(vlen(pull))) return;
 
     const now = performance.now();
@@ -322,7 +358,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     };
     const defenderScreenPos = {
       x: arcLeftX + defenderArcPos.value * arcLengthPx,
-      y: playerY - 50,
+      y: playerY - LAYOUT.defenderToPlayerYContestOffset,
     };
 
     const shot = resolveShot({
@@ -336,9 +372,17 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     });
 
     setShotInProgress(true);
+    shotInProgressShared.value = 1; // flip immediately, don't wait for next render
     setEffects((e) => consumeOnShot(e));
 
-    flightRef.current = shot.flight;
+    // Push bezier params into shared values for the UI-thread reactor.
+    flightStartX.value = shot.flight.start.x;
+    flightStartY.value = shot.flight.start.y;
+    flightApexX.value = shot.flight.apex.x;
+    flightApexY.value = shot.flight.apex.y;
+    flightEndX.value = shot.flight.end.x;
+    flightEndY.value = shot.flight.end.y;
+
     ballX.value = shot.flight.start.x;
     ballY.value = shot.flight.start.y;
     setBallHidden(false);
@@ -353,16 +397,21 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     );
   }
 
-  // Update ball x/y from t parameter on UI thread.
+  // Update ball x/y from t parameter on UI thread, reading bezier params
+  // from shared values (worklet-safe, no JS-thread ref).
   useAnimatedReaction(
     () => ballT.value,
     (t) => {
       'worklet';
-      const f = flightRef.current;
-      if (!f) return;
       const u = 1 - t;
-      ballX.value = u * u * f.start.x + 2 * u * t * f.apex.x + t * t * f.end.x;
-      ballY.value = u * u * f.start.y + 2 * u * t * f.apex.y + t * t * f.end.y;
+      ballX.value =
+        u * u * flightStartX.value +
+        2 * u * t * flightApexX.value +
+        t * t * flightEndX.value;
+      ballY.value =
+        u * u * flightStartY.value +
+        2 * u * t * flightApexY.value +
+        t * t * flightEndY.value;
     },
     []
   );
@@ -391,18 +440,28 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   }
 
   // ----- Animated styles -----
-  const ballAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: ballX.value - 16 }, { translateY: ballY.value - 16 }],
-  }));
+  const ballAnimStyle = useAnimatedStyle(() => {
+    const half = LAYOUT.ballSpritePx / 2;
+    return {
+      transform: [{ translateX: ballX.value - half }, { translateY: ballY.value - half }],
+    };
+  });
 
   const playerAnimStyle = useAnimatedStyle(() => {
     const x = arcLeftX + playerArcPos.value * arcLengthPx;
-    return { transform: [{ translateX: x - 16 }, { translateY: playerY - 16 }] };
+    const half = LAYOUT.ballSpritePx / 2;
+    return { transform: [{ translateX: x - half }, { translateY: playerY - half }] };
   });
 
   const defenderAnimStyle = useAnimatedStyle(() => {
     const x = arcLeftX + defenderArcPos.value * arcLengthPx;
-    return { transform: [{ translateX: x - 32 }, { translateY: playerY - 100 }] };
+    const half = LAYOUT.defenderSpritePx / 2;
+    return {
+      transform: [
+        { translateX: x - half },
+        { translateY: playerY - LAYOUT.defenderYOffsetPx },
+      ],
+    };
   });
 
   // ----- Power-up rendering -----
@@ -426,10 +485,10 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     const power01 = pullToPower(len);
     if (power01 > 0) {
       const playerX = arcLeftX + playerArcPos.value * arcLengthPx;
-      const aim = aimFromPullStub(pull);
+      const aim = aimFromPull(pull); // identical math to the actual shot
       const flight = computeFlight({ x: playerX, y: playerY }, rim, aim, power01);
       const els: React.ReactElement[] = [];
-      const N = 12;
+      const N = LAYOUT.trajectoryDashSegments;
       let prev = sampleFlight(flight, 0);
       for (let i = 1; i <= N; i++) {
         const cur = sampleFlight(flight, i / N);
@@ -482,7 +541,12 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       </View>
 
       <Animated.View style={[styles.absolute, defenderAnimStyle]} pointerEvents="none">
-        <DefenderSprite size={64} variant="grandpa" frame={defenderFrame} frozen={isActive(effects.iceDefenderExpiresAt, now)} />
+        <DefenderSprite
+          size={LAYOUT.defenderSpritePx}
+          variant={DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
+          frame={defenderFrame}
+          frozen={isActive(effects.iceDefenderExpiresAt, now)}
+        />
       </Animated.View>
 
       {powerUp && (
@@ -510,12 +574,12 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       {/* player ball or in-flight ball */}
       {!shotInProgress && !ballHidden && (
         <Animated.View style={[styles.absolute, playerAnimStyle]} pointerEvents="none">
-          <BallSprite size={32} />
+          <BallSprite size={LAYOUT.ballSpritePx} />
         </Animated.View>
       )}
       {shotInProgress && !ballHidden && (
         <Animated.View style={[styles.absolute, ballAnimStyle]} pointerEvents="none">
-          <BallSprite size={32} />
+          <BallSprite size={LAYOUT.ballSpritePx} />
         </Animated.View>
       )}
 
@@ -619,15 +683,6 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   );
 };
 
-/** Local helper duplicating shotPhysics.aimFromPull for the trajectory preview. */
-function aimFromPullStub(pull: { x: number; y: number }): { x: number; y: number } {
-  const len = Math.hypot(pull.x, pull.y);
-  if (len === 0) return { x: 0, y: -1 };
-  let dx = -pull.x / len;
-  let dy = -pull.y / len;
-  if (dy > 0) dy = -dy;
-  return { x: dx * 0.85, y: dy };
-}
 
 // ---------------------------------------------------------------------------
 // Web pointer-event overlays (one per zone)
@@ -808,7 +863,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
-    bottom: '40%',
+    bottom: `${LAYOUT.shootZoneHeightFraction * 100}%` as `${number}%`,
     ...({ userSelect: 'none', cursor: 'ew-resize', touchAction: 'none' } as object),
   },
   zoneShoot: {
@@ -816,7 +871,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: '40%',
+    height: `${LAYOUT.shootZoneHeightFraction * 100}%` as `${number}%`,
     backgroundColor: 'rgba(255,210,63,0.08)',
     borderTopWidth: 2,
     borderTopColor: 'rgba(255,210,63,0.7)',

@@ -78,4 +78,3 @@ export const BasketSprite: React.FC<BasketSpriteProps> = ({ size = 110, big = fa
   );
 };
 
-export const BASKET_RIM_OFFSET_FACTOR = 0.55; // rim center y as fraction of sprite height

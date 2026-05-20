@@ -215,9 +215,13 @@ export function sampleFlight(flight: ShotFlight, t: number): Vec2 {
 /**
  * Decide whether the shot scores.
  *
- * Geometric base check: did the ball's end point land within the rim hitbox?
- * Then apply contested probability penalty (RNG seeded by caller — we just
- * compute it deterministically here based on a passed-in 0..1 random).
+ * The spec says: "ball passes through rim hitbox during DESCENT". So we sample
+ * the bezier flight path at many t values, find the points where the ball
+ * crosses the rim's Y level on its way DOWN, and check whether any of those
+ * crossing points are within the rim hitbox.
+ *
+ * After the geometric pass, we apply the contested-shot probability penalty:
+ * even a clean geometric make can be missed when the defender is close.
  */
 export function classifyShot(
   flight: ShotFlight,
@@ -228,23 +232,49 @@ export function classifyShot(
     ? RIM_HITBOX_SIZE * BIGGER_RIM_MULTIPLIER
     : RIM_HITBOX_SIZE;
 
-  const landingDist = dist(flight.end, rim);
-  const geometricMake = landingDist <= hitboxRadius;
+  const contested =
+    inputs.defender !== null && dist(inputs.defender, flight.start) <= CONTEST_DISTANCE_PX;
 
-  const contested = inputs.defender !== null && dist(inputs.defender, flight.start) <= CONTEST_DISTANCE_PX;
+  // Sample the bezier and find descent-time crossings of the rim's Y level.
+  const SAMPLES = 64;
+  let prev = sampleFlight(flight, 0);
+  let geometricMake = false;
+  for (let i = 1; i <= SAMPLES; i++) {
+    const t = i / SAMPLES;
+    const cur = sampleFlight(flight, t);
+    // descent = y is increasing in screen coords (going down)
+    const descending = cur.y > prev.y;
+    const crossesRimY = (prev.y - rim.y) * (cur.y - rim.y) <= 0; // sign flip across rim.y
+    if (descending && crossesRimY) {
+      // Linear-interp the crossing X at rim.y between prev and cur.
+      const span = cur.y - prev.y;
+      const k = span === 0 ? 0 : (rim.y - prev.y) / span;
+      const crossX = prev.x + (cur.x - prev.x) * k;
+      const dx = crossX - rim.x;
+      if (Math.abs(dx) <= hitboxRadius) {
+        geometricMake = true;
+        break;
+      }
+    }
+    prev = cur;
+  }
+
+  // Fallback: if the bezier never visibly descends through rim.y but lands
+  // inside the hitbox (e.g. very flat trajectory ending at the rim), still
+  // count it. Keeps short-armed shots from looking unfair.
+  if (!geometricMake && dist(flight.end, rim) <= hitboxRadius) {
+    geometricMake = true;
+  }
 
   if (!geometricMake) {
     return { result: 'miss', contested };
   }
-
-  // Even if geometrically a make, contested shots have a probabilistic penalty.
   if (contested) {
     const roll = inputs.rng();
     if (roll < CONTESTED_MAKE_PROB_PENALTY) {
       return { result: 'miss', contested };
     }
   }
-
   return { result: 'make', contested };
 }
 

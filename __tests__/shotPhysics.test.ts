@@ -187,6 +187,33 @@ describe('classifyShot', () => {
     expect(out.contested).toBe(true);
   });
 
+  test('descent-path detection: ball that arcs OVER the rim at rim.y registers as a make', () => {
+    // Construct a flight where the bezier passes through rim.y on descent
+    // exactly inside the hitbox.
+    const PLAYER_LOW = { x: 200, y: 700 };
+    const RIM = { x: 200, y: 200 };
+    const flight = computeFlight(PLAYER_LOW, RIM, { x: 0, y: -1 }, 0.7);
+    const out = classifyShot(flight, RIM, {
+      biggerRimActive: false,
+      defender: null,
+      rng: fixedRng(0.5),
+    });
+    expect(out.result).toBe('make');
+  });
+
+  test('descent-path detection: ball that flies way past the rim does NOT register as make', () => {
+    const PLAYER_LOW = { x: 200, y: 700 };
+    const RIM = { x: 200, y: 200 };
+    // Strong off-angle: ball lands well to the right of rim
+    const flight = computeFlight(PLAYER_LOW, RIM, { x: 0.6, y: -0.8 }, 1.0);
+    const out = classifyShot(flight, RIM, {
+      biggerRimActive: false,
+      defender: null,
+      rng: fixedRng(0.5),
+    });
+    expect(out.result).toBe('miss');
+  });
+
   test('Bigger Rim doubles hitbox so a previously-missed shot makes', () => {
     // Aim slightly off so the ball lands ~1.4× the hitbox away from rim.
     // Without bigger rim: miss. With bigger rim: make.

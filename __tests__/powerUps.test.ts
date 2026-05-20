@@ -27,16 +27,13 @@ describe('pickRandomPowerUpKind', () => {
     }
   });
 
-  test('weighted distribution converges over many samples', () => {
-    const counts = { biggerRim: 0, doubleJump: 0, speedBoost: 0, iceDefender: 0, ghostShot: 0 };
-    const N = 5000;
-    for (let i = 0; i < N; i++) {
+  test('Phase 2 lock-in: every spawn is Bigger Rim while PHASE2_ONLY_BIGGER_RIM is true', () => {
+    // Default config has the lock-in on. If/when Phase 4 disables the lock,
+    // this assertion needs to be adapted to weighted distribution.
+    for (let i = 0; i < 200; i++) {
       const k = pickRandomPowerUpKind(Math.random);
-      counts[k]++;
+      expect(k).toBe('biggerRim');
     }
-    // biggerRim has the highest weight; should be most common.
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    expect(sorted[0]![0]).toBe('biggerRim');
   });
 });
 
