@@ -1,0 +1,469 @@
+import React from 'react';
+import { Platform, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { CourtBackground } from '@/components/CourtBackground';
+import { BasketSprite } from '@/components/BasketSprite';
+import { ShooterSprite } from '@/components/ShooterSprite';
+import { TimingFlash } from '@/components/TimingFlash';
+import { ConfettiBurst } from '@/components/ConfettiBurst';
+import { PixelButton } from '@/components/PixelButton';
+import { PixelBorderPanel } from '@/components/PixelBorderPanel';
+import {
+  DefenderId,
+  POINTS_BLOCK_FOR_SHOOTER,
+  POINTS_CONTESTED_MAKE,
+  POINTS_OPEN_MAKE,
+  SWIPE_UP_MIN_DISTANCE_PX,
+  SWIPE_UP_MIN_VELOCITY,
+  TURN_DURATION_SEC,
+} from '@/constants/gameConfig';
+import { FONT, PALETTE, SPACING } from '@/constants/theme';
+import { botShotResult } from '@/game/botAI';
+import {
+  DefensePhase,
+  DefenseState,
+  initDefenseState,
+  processSwipe,
+  SwipeOutcome,
+  tickDefense,
+} from '@/game/defenseLogic';
+
+interface DefenseScreenProps {
+  /** 1..4 — controls bot speed, fakes, perfect window. */
+  defenderLevel?: 1 | 2 | 3 | 4;
+  turnSeconds?: number;
+  /** Called each time the bot resolves a shot (block or score). */
+  onShotResolved?: (event: DefenseShotResolved) => void;
+  onTurnEnd?: (botPointsScored: number, perfectBlocks: number) => void;
+  playerLabel?: string;
+}
+
+export interface DefenseShotResolved {
+  outcome: SwipeOutcome;
+  /** Did the bot score on this attempt? */
+  botMade: boolean;
+  /** How many points the bot earned. */
+  botPoints: number;
+  /** Was this a perfect block? */
+  perfectBlock: boolean;
+}
+
+const DEFENDER_LEVEL_TO_VARIANT: Record<1 | 2 | 3 | 4, DefenderId> = {
+  1: 'grandpa',
+  2: 'recLeague',
+  3: 'pro',
+  4: 'alien',
+};
+
+/**
+ * Defense screen — first-person view from under the basket looking out at
+ * the bot shooter beyond the 3-pt arc. Player swipes up to jump and block.
+ *
+ * Architecture:
+ *   - JS-side FSM (`defenseLogic.tickDefense`) owns timing.
+ *   - A ~60Hz polling loop advances the FSM and updates React state.
+ *   - When the FSM enters RELEASE, a TimingFlash burst fires.
+ *   - Swipe-up triggers `processSwipe`. The result determines block vs miss.
+ *   - On PERFECT block: ConfettiBurst + +XP banner.
+ *   - On EARLY/LATE: bot rolls `botShotResult` to decide make vs miss.
+ */
+export const DefenseScreen: React.FC<DefenseScreenProps> = ({
+  defenderLevel = 1,
+  turnSeconds = TURN_DURATION_SEC,
+  onShotResolved,
+  onTurnEnd,
+  playerLabel = 'PLAYER',
+}) => {
+  const { width: winW, height: winH } = useWindowDimensions();
+  const [layout, setLayout] = React.useState<{ width: number; height: number }>({
+    width: winW,
+    height: winH,
+  });
+  const { width, height } = layout;
+
+  // ----- defense FSM state -----
+  const [state, setState] = React.useState<DefenseState>(() =>
+    initDefenseState(defenderLevel, performance.now())
+  );
+  const stateRef = React.useRef(state);
+  React.useEffect(() => { stateRef.current = state; }, [state]);
+
+  // ----- score / turn tracking -----
+  const [botScore, setBotScore] = React.useState(0);
+  const [perfectBlocks, setPerfectBlocks] = React.useState(0);
+  const [timeRemaining, setTimeRemaining] = React.useState(turnSeconds);
+  const [turnEnded, setTurnEnded] = React.useState(false);
+  const botScoreRef = React.useRef(0);
+  const perfectBlocksRef = React.useRef(0);
+  React.useEffect(() => { botScoreRef.current = botScore; }, [botScore]);
+  React.useEffect(() => { perfectBlocksRef.current = perfectBlocks; }, [perfectBlocks]);
+
+  // ----- visual triggers -----
+  const [flashTrigger, setFlashTrigger] = React.useState(0);
+  const [confettiTrigger, setConfettiTrigger] = React.useState(0);
+  const [bannerText, setBannerText] = React.useState<{ text: string; color: string } | null>(null);
+
+  // ----- Turn timer -----
+  React.useEffect(() => {
+    if (turnEnded) return;
+    if (timeRemaining <= 0) {
+      setTurnEnded(true);
+      return;
+    }
+    const id = setTimeout(() => setTimeRemaining((s) => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [timeRemaining, turnEnded]);
+
+  // ----- FSM tick loop @ ~60Hz -----
+  React.useEffect(() => {
+    if (turnEnded) return;
+    let raf = 0;
+    const tick = () => {
+      const now = performance.now();
+      const next = tickDefense(stateRef.current, now);
+      if (next !== stateRef.current) {
+        // Detect transitions of interest.
+        const prev = stateRef.current;
+        if (prev.phase !== 'RELEASE' && next.phase === 'RELEASE') {
+          // Telegraph flash on release moment.
+          setFlashTrigger((t) => t + 1);
+        }
+        if (prev.phase !== 'RESULT' && next.phase === 'RESULT') {
+          // FSM auto-resolved (LATE because no swipe). Bot took the shot.
+          if (next.lastOutcome === 'LATE') {
+            applyBotShot(next, /*open=*/ false);
+          } else if (next.lastOutcome === 'EARLY') {
+            applyBotShot(next, /*open=*/ true);
+          } else if (next.lastOutcome === 'PERFECT') {
+            applyBlock();
+          }
+        }
+        setState(next);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // intentional: applyBotShot/applyBlock close over current state via refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [turnEnded]);
+
+  // ----- Outcome handlers -----
+  function applyBotShot(_st: DefenseState, open: boolean) {
+    const result = botShotResult(defenderLevel);
+    const made = result === 'make';
+    const points = made ? (open ? POINTS_OPEN_MAKE : POINTS_CONTESTED_MAKE) : 0;
+    if (made) {
+      setBotScore((s) => s + points);
+      setBannerText({
+        text: open ? `BOT BUCKET (+${points})` : `BOT MAKE (+${points})`,
+        color: PALETTE.redHot,
+      });
+    } else {
+      setBannerText({ text: 'BOT MISSES', color: PALETTE.fog });
+    }
+    onShotResolved?.({
+      outcome: open ? 'EARLY' : 'LATE',
+      botMade: made,
+      botPoints: points,
+      perfectBlock: false,
+    });
+    setTimeout(() => setBannerText(null), 900);
+  }
+
+  function applyBlock() {
+    setPerfectBlocks((p) => p + 1);
+    setConfettiTrigger((c) => c + 1);
+    setBannerText({ text: 'BLOCK!', color: PALETTE.greenGo });
+    onShotResolved?.({
+      outcome: 'PERFECT',
+      botMade: false,
+      botPoints: POINTS_BLOCK_FOR_SHOOTER,
+      perfectBlock: true,
+    });
+    setTimeout(() => setBannerText(null), 900);
+  }
+
+  /** Called when the player completes a swipe-up gesture. */
+  function handleSwipe() {
+    const now = performance.now();
+    const cur = stateRef.current;
+    const r = processSwipe(cur, now);
+    setState(r.state);
+    if (r.outcome === 'PERFECT') {
+      applyBlock();
+    } else if (r.outcome === 'EARLY') {
+      applyBotShot(r.state, /*open=*/ true);
+    } else if (r.outcome === 'LATE') {
+      applyBotShot(r.state, /*open=*/ false);
+    } else if (r.outcome === 'BAITED') {
+      setBannerText({ text: 'FAKED OUT', color: PALETTE.yellowBright });
+      setTimeout(() => setBannerText(null), 700);
+    }
+  }
+
+  // ----- Gesture (swipe up) -----
+  const swipeGesture = Gesture.Pan()
+    .maxPointers(1)
+    .minDistance(SWIPE_UP_MIN_DISTANCE_PX)
+    .onEnd((e) => {
+      'worklet';
+      // Distance must exceed minimum AND velocity must be upward.
+      const dx = e.translationX;
+      const dy = e.translationY;
+      if (dy >= 0) return; // not upward
+      if (Math.abs(dy) < SWIPE_UP_MIN_DISTANCE_PX) return;
+      if (-e.velocityY < SWIPE_UP_MIN_VELOCITY) return;
+      runOnJS(handleSwipe)();
+    });
+
+  // ----- Web pointer fallback (same reason as OffenseScreen) -----
+  // Track raw pointer-down/move/up to detect swipe-up.
+  const swipeRef = React.useRef({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+  });
+  const onWebDown = (ev: any) => {
+    if (turnEnded || ev.button !== 0) return;
+    ev.preventDefault?.();
+    try { (ev.currentTarget as HTMLElement)?.setPointerCapture?.(ev.pointerId); } catch {}
+    swipeRef.current = {
+      active: true,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      startTime: performance.now(),
+    };
+  };
+  const onWebUp = (ev: any) => {
+    const s = swipeRef.current;
+    if (!s.active) return;
+    ev.preventDefault?.();
+    try { (ev.currentTarget as HTMLElement)?.releasePointerCapture?.(ev.pointerId); } catch {}
+    s.active = false;
+    const dx = ev.clientX - s.startX;
+    const dy = ev.clientY - s.startY;
+    const elapsed = Math.max(1, performance.now() - s.startTime);
+    if (dy >= 0) return; // not upward
+    if (Math.abs(dy) < SWIPE_UP_MIN_DISTANCE_PX) return;
+    const velocity = (Math.abs(dy) / elapsed) * 1000; // px/sec
+    if (velocity < SWIPE_UP_MIN_VELOCITY) return;
+    handleSwipe();
+  };
+
+  // ----- Layout -----
+  // Defense perspective: shooter is FAR (top) and small; the basket is at our feet (bottom).
+  const basketSize = Math.min(width * 0.5, 200);
+  const shooterSize = Math.min(width * 0.5, 200);
+  const shooterTopY = height * 0.18;
+  const basketTopY = height * 0.62;
+  const flashCx = width / 2;
+  const flashCy = shooterTopY + shooterSize * 0.4;
+
+  // Frame index from FSM phase.
+  const frame = phaseToFrame(state.phase);
+  const flashing = state.phase === 'RELEASE';
+
+  return (
+    <View
+      style={styles.root}
+      onLayout={(e) => {
+        const { width: w, height: h } = e.nativeEvent.layout;
+        if (w !== layout.width || h !== layout.height) setLayout({ width: w, height: h });
+      }}
+    >
+      <CourtBackground width={width} height={height} court="playground" perspective="defense" />
+
+      {/* shooter */}
+      <View
+        style={[styles.shooterWrap, { top: shooterTopY, left: width / 2 - shooterSize / 2 }]}
+        pointerEvents="none"
+      >
+        <ShooterSprite
+          size={shooterSize}
+          frame={frame}
+          variant={DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
+          flashing={flashing}
+        />
+      </View>
+
+      {/* telegraph flash (rings) */}
+      <View
+        style={{ position: 'absolute', left: flashCx - 100, top: flashCy - 100 }}
+        pointerEvents="none"
+      >
+        <TimingFlash trigger={flashTrigger} size={200} />
+      </View>
+
+      {/* basket from below */}
+      <View
+        style={[styles.basketWrap, { top: basketTopY, left: width / 2 - basketSize / 2 }]}
+        pointerEvents="none"
+      >
+        <BasketSprite size={basketSize} />
+      </View>
+
+      {/* swipe-area overlay */}
+      {Platform.OS === 'web' ? (
+        <View
+          style={[styles.swipeOverlay, styles.touchActionNone as object]}
+          pointerEvents="auto"
+          {...({
+            onPointerDown: onWebDown,
+            onPointerUp: onWebUp,
+            onPointerCancel: onWebUp,
+            onPointerLeave: onWebUp,
+          } as object)}
+        />
+      ) : (
+        <GestureDetector gesture={swipeGesture}>
+          <View style={styles.swipeOverlay} />
+        </GestureDetector>
+      )}
+
+      {/* HUD */}
+      <SafeAreaView edges={['top']} style={styles.hudRow} pointerEvents="box-none">
+        <PixelBorderPanel innerPadding={6}>
+          <Text style={styles.hudText}>{playerLabel}</Text>
+          <Text style={styles.hudScore}>BLOCKS {perfectBlocks}</Text>
+        </PixelBorderPanel>
+        <PixelBorderPanel innerPadding={6}>
+          <Text style={styles.hudText}>BOT</Text>
+          <Text style={styles.hudScore}>{botScore}</Text>
+        </PixelBorderPanel>
+        <PixelBorderPanel innerPadding={6}>
+          <Text style={styles.hudText}>TIME</Text>
+          <Text style={[styles.hudScore, timeRemaining <= 5 ? { color: PALETTE.redHot } : undefined]}>
+            {timeRemaining}
+          </Text>
+        </PixelBorderPanel>
+      </SafeAreaView>
+
+      {/* swipe-up prompt */}
+      <View style={styles.swipeHint} pointerEvents="none">
+        <Text style={styles.swipeHintText}>SWIPE UP TO BLOCK</Text>
+      </View>
+
+      {/* result banner */}
+      {bannerText && (
+        <View style={styles.bannerWrap} pointerEvents="none">
+          <PixelBorderPanel innerPadding={14} color={PALETTE.midnight}>
+            <Text style={[styles.bannerText, { color: bannerText.color }]}>{bannerText.text}</Text>
+          </PixelBorderPanel>
+        </View>
+      )}
+
+      {/* confetti on perfect block */}
+      <ConfettiBurst trigger={confettiTrigger} cx={width / 2} cy={height / 2} count={28} />
+
+      {/* turn over overlay */}
+      {turnEnded && (
+        <View style={styles.turnOver}>
+          <PixelBorderPanel innerPadding={20}>
+            <Text style={styles.bannerText}>TURN OVER</Text>
+            <Text style={styles.hudText}>BLOCKS: {perfectBlocks}</Text>
+            <Text style={styles.hudText}>BOT POINTS: {botScore}</Text>
+            <View style={{ height: SPACING.md }} />
+            <PixelButton
+              label="OK"
+              size="md"
+              onPress={() =>
+                onTurnEnd?.(botScoreRef.current, perfectBlocksRef.current)
+              }
+            />
+          </PixelBorderPanel>
+        </View>
+      )}
+    </View>
+  );
+};
+
+function phaseToFrame(phase: DefensePhase): 0 | 1 | 2 {
+  switch (phase) {
+    case 'IDLE':
+    case 'RESULT':
+      return 0;
+    case 'WINDUP':
+    case 'FAKE_RESET':
+      return 1;
+    case 'RELEASE':
+      return 2;
+  }
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: PALETTE.black, overflow: 'hidden' },
+  shooterWrap: { position: 'absolute' },
+  basketWrap: { position: 'absolute' },
+  swipeOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  touchActionNone: {
+    ...({ touchAction: 'none', userSelect: 'none' } as object),
+  },
+  hudRow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.md,
+    paddingTop: SPACING.sm,
+  },
+  hudText: {
+    fontFamily: FONT.family,
+    fontSize: FONT.tiny,
+    color: PALETTE.lineWhite,
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  hudScore: {
+    fontFamily: FONT.family,
+    fontSize: FONT.titleM,
+    color: PALETTE.yellowBright,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  swipeHint: {
+    position: 'absolute',
+    bottom: SPACING.xl,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  swipeHintText: {
+    fontFamily: FONT.family,
+    fontSize: FONT.small,
+    color: PALETTE.yellowBright,
+    letterSpacing: 1,
+    opacity: 0.8,
+  },
+  bannerWrap: {
+    position: 'absolute',
+    top: '38%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  bannerText: {
+    fontFamily: FONT.family,
+    fontSize: FONT.titleM,
+    color: PALETTE.lineWhite,
+    letterSpacing: 1,
+    textAlign: 'center',
+  },
+  turnOver: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});

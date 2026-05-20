@@ -10,6 +10,7 @@ import {
   useFonts,
 } from '@expo-google-fonts/press-start-2p';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { DefenseScreen } from '@/screens/DefenseScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { OffenseScreen } from '@/screens/OffenseScreen';
 import { PlaceholderScreen } from '@/screens/PlaceholderScreen';
@@ -80,10 +81,9 @@ export default function App() {
             </Stack.Screen>
             <Stack.Screen name="Defense">
               {({ navigation }) => (
-                <PlaceholderScreen
-                  title="DEFENSE"
-                  description="Swipe-to-block ships in Phase 3."
-                  onBack={() => navigation.goBack()}
+                <DefenseScreen
+                  defenderLevel={1}
+                  onTurnEnd={() => navigation.navigate('Home')}
                 />
               )}
             </Stack.Screen>

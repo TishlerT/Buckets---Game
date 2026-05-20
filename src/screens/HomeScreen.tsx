@@ -31,12 +31,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => (
         />
         <View style={{ height: SPACING.md }} />
         <PixelButton
-          label="LOCAL 2P"
+          label="DEFENSE"
           color={PALETTE.blueIce}
-          testID="home.local2p"
-          onPress={() =>
-            navigation.navigate('Game', { mode: 'local2P', defenderLevel: 1 })
-          }
+          testID="home.defense"
+          onPress={() => navigation.navigate('Defense')}
         />
         <View style={{ height: SPACING.md }} />
         <PixelButton
