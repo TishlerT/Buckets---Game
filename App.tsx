@@ -11,6 +11,7 @@ import {
 } from '@expo-google-fonts/press-start-2p';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { HomeScreen } from '@/screens/HomeScreen';
+import { OffenseScreen } from '@/screens/OffenseScreen';
 import { PlaceholderScreen } from '@/screens/PlaceholderScreen';
 import { RootStackParamList } from '@/navigation';
 import { PALETTE } from '@/constants/theme';
@@ -53,7 +54,11 @@ export default function App() {
         <NavigationContainer theme={navTheme}>
           <Stack.Navigator
             initialRouteName="Home"
-            screenOptions={{ headerShown: false, animation: 'fade' }}
+            screenOptions={{
+              headerShown: false,
+              animation: 'fade',
+              gestureEnabled: false,
+            }}
           >
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="Game">
@@ -67,10 +72,9 @@ export default function App() {
             </Stack.Screen>
             <Stack.Screen name="Offense">
               {({ navigation }) => (
-                <PlaceholderScreen
-                  title="OFFENSE"
-                  description="Slingshot mechanic ships in Phase 2."
-                  onBack={() => navigation.goBack()}
+                <OffenseScreen
+                  defenderLevel={1}
+                  onTurnEnd={() => navigation.navigate('Home')}
                 />
               )}
             </Stack.Screen>

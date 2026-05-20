@@ -27,9 +27,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => (
           label="PLAY"
           color={PALETTE.greenGo}
           testID="home.play"
-          onPress={() =>
-            navigation.navigate('Game', { mode: 'vsBot', defenderLevel: 1 })
-          }
+          onPress={() => navigation.navigate('Offense')}
         />
         <View style={{ height: SPACING.md }} />
         <PixelButton
