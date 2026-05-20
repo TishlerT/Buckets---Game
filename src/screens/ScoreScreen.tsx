@@ -26,19 +26,35 @@ export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu }) =
   const opp =
     state.mode === 'vsBot' ? state.scores.BOT : state.scores.P2;
 
-  const playerWon = winner === 'P1' || (state.mode === 'local2P' && winner === 'P2');
-  const xpFromGame = playerWon ? XP_WIN : XP_LOSS;
+  // In vs-bot mode the device is always P1's, so "YOU" = P1.
+  // In local 2P, both players share the device — show neutral "PLAYER N WINS"
+  // copy instead of an ambiguous "YOU WIN".
+  const playerWonVsBot = state.mode === 'vsBot' && winner === 'P1';
+  const xpFromGame = playerWonVsBot ? XP_WIN : XP_LOSS;
   const xpFromBlocks = p1.perfectBlocks * XP_PERFECT_BLOCK_BONUS;
-  const xpTotal = xpFromGame + xpFromBlocks;
+  const xpTotal = state.mode === 'vsBot' ? xpFromGame + xpFromBlocks : 0;
 
   const titleText =
-    winner === 'TIE' ? 'TIE GAME' : playerWon ? 'YOU WIN!' : winner === 'BOT' ? 'BOT WINS' : 'PLAYER 2 WINS';
-  const titleColor = winner === 'TIE' ? PALETTE.yellowBright : playerWon ? PALETTE.greenGo : PALETTE.redHot;
+    winner === 'TIE'
+      ? 'TIE GAME'
+      : state.mode === 'vsBot'
+        ? winner === 'P1' ? 'YOU WIN!' : 'BOT WINS'
+        : winner === 'P1' ? 'PLAYER 1 WINS' : 'PLAYER 2 WINS';
+  const titleColor =
+    winner === 'TIE'
+      ? PALETTE.yellowBright
+      : state.mode === 'vsBot' && winner === 'P1'
+        ? PALETTE.greenGo
+        : state.mode === 'local2P'
+          ? PALETTE.greenGo
+          : PALETTE.redHot;
 
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        {playerWon && <ConfettiBurst trigger={1} cx={200} cy={300} count={36} maxRadius={300} />}
+        {(playerWonVsBot || (state.mode === 'local2P' && winner !== 'TIE')) && (
+          <ConfettiBurst trigger={1} cx={200} cy={300} count={36} maxRadius={300} />
+        )}
 
         <View style={styles.titleWrap}>
           <Text style={[styles.titleText, { color: titleColor }]}>{titleText}</Text>
@@ -66,20 +82,22 @@ export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu }) =
           </PixelBorderPanel>
         </View>
 
-        <View style={styles.xpWrap}>
-          <PixelBorderPanel innerPadding={SPACING.md} color={PALETTE.shadow}>
-            <Text style={styles.xpLabel}>XP EARNED</Text>
-            <Text style={styles.xpTotal}>+{xpTotal}</Text>
-            <Text style={styles.xpDetail}>
-              {playerWon ? 'WIN' : 'LOSS'} +{xpFromGame}
-            </Text>
-            {p1.perfectBlocks > 0 && (
+        {state.mode === 'vsBot' && (
+          <View style={styles.xpWrap}>
+            <PixelBorderPanel innerPadding={SPACING.md} color={PALETTE.shadow}>
+              <Text style={styles.xpLabel}>XP EARNED</Text>
+              <Text style={styles.xpTotal}>+{xpTotal}</Text>
               <Text style={styles.xpDetail}>
-                {p1.perfectBlocks} BLOCK{p1.perfectBlocks === 1 ? '' : 'S'} +{xpFromBlocks}
+                {playerWonVsBot ? 'WIN' : 'LOSS'} +{xpFromGame}
               </Text>
-            )}
-          </PixelBorderPanel>
-        </View>
+              {p1.perfectBlocks > 0 && (
+                <Text style={styles.xpDetail}>
+                  {p1.perfectBlocks} BLOCK{p1.perfectBlocks === 1 ? '' : 'S'} +{xpFromBlocks}
+                </Text>
+              )}
+            </PixelBorderPanel>
+          </View>
+        )}
 
         <View style={styles.buttons}>
           <PixelButton label="REMATCH" color={PALETTE.greenGo} onPress={onRematch} />

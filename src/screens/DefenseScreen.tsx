@@ -8,6 +8,7 @@ import { BasketSprite } from '@/components/BasketSprite';
 import { ShooterSprite } from '@/components/ShooterSprite';
 import { TimingFlash } from '@/components/TimingFlash';
 import { ConfettiBurst } from '@/components/ConfettiBurst';
+import { MatchScoreboard } from '@/components/MatchScoreboard';
 import { PixelButton } from '@/components/PixelButton';
 import { PixelBorderPanel } from '@/components/PixelBorderPanel';
 import {
@@ -38,6 +39,12 @@ interface DefenseScreenProps {
   onShotResolved?: (event: DefenseShotResolved) => void;
   onTurnEnd?: (botPointsScored: number, perfectBlocks: number) => void;
   playerLabel?: string;
+  /** Match-level info for the persistent scoreboard. Optional. */
+  matchScores?: { p1: number; opp: number };
+  matchTimeRemainingSec?: number;
+  matchMode?: 'vsBot' | 'local2P';
+  /** Cross-turn power-up effects carried over from the previous offense turn. */
+  doubleJumpAvailable?: boolean;
 }
 
 export interface DefenseShotResolved {
@@ -75,6 +82,10 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   onShotResolved,
   onTurnEnd,
   playerLabel = 'PLAYER',
+  matchScores,
+  matchTimeRemainingSec,
+  matchMode = 'vsBot',
+  doubleJumpAvailable = false,
 }) => {
   const { width: winW, height: winH } = useWindowDimensions();
   const [layout, setLayout] = React.useState<{ width: number; height: number }>({
@@ -84,11 +95,25 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   const { width, height } = layout;
 
   // ----- defense FSM state -----
-  const [state, setState] = React.useState<DefenseState>(() =>
-    initDefenseState(defenderLevel, performance.now())
-  );
-  const stateRef = React.useRef(state);
-  React.useEffect(() => { stateRef.current = state; }, [state]);
+  // We hold defense FSM in a ref (NOT React state) so the swipe handler
+  // and the RAF tick loop both write to the same source of truth without
+  // racing. React state is just a render-trigger snapshot.
+  const stateRef = React.useRef(initDefenseState(defenderLevel, performance.now()));
+  const [, forceRender] = React.useReducer((x: number) => x + 1, 0);
+  /** Mutate state via this helper so we never miss a render. */
+  const updateState = React.useCallback((next: DefenseState) => {
+    stateRef.current = next;
+    forceRender();
+  }, []);
+  const state = stateRef.current;
+
+  /** Whether the player has already used their swipe for the current attempt.
+   * Reset every time we leave RELEASE → RESULT or enter a new IDLE/WINDUP. */
+  const swipesUsedRef = React.useRef(0);
+  const doubleJumpAvailableRef = React.useRef(doubleJumpAvailable);
+  React.useEffect(() => {
+    doubleJumpAvailableRef.current = doubleJumpAvailable;
+  }, [doubleJumpAvailable]);
 
   // ----- score / turn tracking -----
   const [botScore, setBotScore] = React.useState(0);
@@ -116,31 +141,46 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
     return () => clearTimeout(id);
   }, [timeRemaining, turnEnded]);
 
+  // Global match clock takes priority — if it hits 0 mid-turn, end the turn.
+  React.useEffect(() => {
+    if (turnEnded) return;
+    if (matchTimeRemainingSec === undefined) return;
+    if (matchTimeRemainingSec <= 0) setTurnEnded(true);
+  }, [matchTimeRemainingSec, turnEnded]);
+
   // ----- FSM tick loop @ ~60Hz -----
+  // Single source of truth: the FSM auto-advances and only auto-resolves
+  // RELEASE → RESULT when the player did NOT swipe in time. A successful
+  // swipe pre-resolves the shot via processSwipe; we just check whether
+  // the FSM's tick produced a "fresh" RESULT we haven't applied yet.
+  const lastAppliedOutcomeAtRef = React.useRef(0);
   React.useEffect(() => {
     if (turnEnded) return;
     let raf = 0;
     const tick = () => {
       const now = performance.now();
-      const next = tickDefense(stateRef.current, now);
-      if (next !== stateRef.current) {
-        // Detect transitions of interest.
-        const prev = stateRef.current;
+      const prev = stateRef.current;
+      const next = tickDefense(prev, now);
+      if (next !== prev) {
         if (prev.phase !== 'RELEASE' && next.phase === 'RELEASE') {
-          // Telegraph flash on release moment.
           setFlashTrigger((t) => t + 1);
+          // Reset swipe budget at the start of each release.
+          swipesUsedRef.current = 0;
+        }
+        if (prev.phase !== 'IDLE' && next.phase === 'IDLE') {
+          swipesUsedRef.current = 0;
         }
         if (prev.phase !== 'RESULT' && next.phase === 'RESULT') {
-          // FSM auto-resolved (LATE because no swipe). Bot took the shot.
-          if (next.lastOutcome === 'LATE') {
-            applyBotShot(next, /*open=*/ false);
-          } else if (next.lastOutcome === 'EARLY') {
-            applyBotShot(next, /*open=*/ true);
-          } else if (next.lastOutcome === 'PERFECT') {
-            applyBlock();
+          // Apply outcome ONLY if it wasn't already applied via swipe.
+          const outcomeStamp = next.phaseStartedAtMs;
+          if (outcomeStamp !== lastAppliedOutcomeAtRef.current) {
+            lastAppliedOutcomeAtRef.current = outcomeStamp;
+            if (next.lastOutcome === 'LATE') applyBotShot(/*open=*/ false);
+            else if (next.lastOutcome === 'EARLY') applyBotShot(/*open=*/ true);
+            else if (next.lastOutcome === 'PERFECT') applyBlock();
           }
         }
-        setState(next);
+        updateState(next);
       }
       raf = requestAnimationFrame(tick);
     };
@@ -151,7 +191,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   }, [turnEnded]);
 
   // ----- Outcome handlers -----
-  function applyBotShot(_st: DefenseState, open: boolean) {
+  function applyBotShot(open: boolean) {
     const result = botShotResult(defenderLevel);
     const made = result === 'make';
     const points = made ? (open ? POINTS_OPEN_MAKE : POINTS_CONTESTED_MAKE) : 0;
@@ -188,19 +228,41 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
 
   /** Called when the player completes a swipe-up gesture. */
   function handleSwipe() {
-    const now = performance.now();
+    if (turnEnded) return;
     const cur = stateRef.current;
+
+    // Enforce one-swipe-per-shot UNLESS Double Jump grants a second.
+    if (swipesUsedRef.current >= 1) {
+      if (doubleJumpAvailableRef.current) {
+        doubleJumpAvailableRef.current = false;
+      } else {
+        // ignore; player already swiped this shot
+        return;
+      }
+    }
+    swipesUsedRef.current += 1;
+
+    const now = performance.now();
     const r = processSwipe(cur, now);
-    setState(r.state);
+    updateState(r.state);
+
+    // Mark this resolution so the RAF tick doesn't double-apply.
+    if (r.state.phase === 'RESULT') {
+      lastAppliedOutcomeAtRef.current = r.state.phaseStartedAtMs;
+    }
+
     if (r.outcome === 'PERFECT') {
       applyBlock();
     } else if (r.outcome === 'EARLY') {
-      applyBotShot(r.state, /*open=*/ true);
+      applyBotShot(/*open=*/ true);
     } else if (r.outcome === 'LATE') {
-      applyBotShot(r.state, /*open=*/ false);
+      applyBotShot(/*open=*/ false);
     } else if (r.outcome === 'BAITED') {
       setBannerText({ text: 'FAKED OUT', color: PALETTE.yellowBright });
       setTimeout(() => setBannerText(null), 700);
+    } else if (r.outcome === 'IGNORED') {
+      // Swipe didn't classify; refund the swipe budget so the player can try again.
+      swipesUsedRef.current = Math.max(0, swipesUsedRef.current - 1);
     }
   }
 
@@ -325,22 +387,32 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
       )}
 
       {/* HUD */}
-      <SafeAreaView edges={['top']} style={styles.hudRow} pointerEvents="box-none">
-        <PixelBorderPanel innerPadding={6}>
-          <Text style={styles.hudText}>{playerLabel}</Text>
-          <Text style={styles.hudScore}>BLOCKS {perfectBlocks}</Text>
-        </PixelBorderPanel>
-        <PixelBorderPanel innerPadding={6}>
-          <Text style={styles.hudText}>BOT</Text>
-          <Text style={styles.hudScore}>{botScore}</Text>
-        </PixelBorderPanel>
-        <PixelBorderPanel innerPadding={6}>
-          <Text style={styles.hudText}>TIME</Text>
-          <Text style={[styles.hudScore, timeRemaining <= 5 ? { color: PALETTE.redHot } : undefined]}>
-            {timeRemaining}
-          </Text>
-        </PixelBorderPanel>
-      </SafeAreaView>
+      {matchScores && matchTimeRemainingSec !== undefined ? (
+        <MatchScoreboard
+          mode={matchMode}
+          p1Score={matchScores.p1}
+          oppScore={matchScores.opp + botScore}
+          turnTimeSec={timeRemaining}
+          matchTimeSec={matchTimeRemainingSec}
+        />
+      ) : (
+        <SafeAreaView edges={['top']} style={styles.hudRow} pointerEvents="box-none">
+          <PixelBorderPanel innerPadding={6}>
+            <Text style={styles.hudText}>{playerLabel}</Text>
+            <Text style={styles.hudScore}>BLOCKS {perfectBlocks}</Text>
+          </PixelBorderPanel>
+          <PixelBorderPanel innerPadding={6}>
+            <Text style={styles.hudText}>BOT</Text>
+            <Text style={styles.hudScore}>{botScore}</Text>
+          </PixelBorderPanel>
+          <PixelBorderPanel innerPadding={6}>
+            <Text style={styles.hudText}>TIME</Text>
+            <Text style={[styles.hudScore, timeRemaining <= 5 ? { color: PALETTE.redHot } : undefined]}>
+              {timeRemaining}
+            </Text>
+          </PixelBorderPanel>
+        </SafeAreaView>
+      )}
 
       {/* swipe-up prompt */}
       <View style={styles.swipeHint} pointerEvents="none">
@@ -385,9 +457,9 @@ function phaseToFrame(phase: DefensePhase): 0 | 1 | 2 {
   switch (phase) {
     case 'IDLE':
     case 'RESULT':
+    case 'FAKE_RESET': // shooter resets to idle stance per spec
       return 0;
     case 'WINDUP':
-    case 'FAKE_RESET':
       return 1;
     case 'RELEASE':
       return 2;

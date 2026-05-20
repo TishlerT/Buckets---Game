@@ -104,20 +104,25 @@ export interface DefenderLevelConfig {
 
 export const DEFENDER_LEVELS: Record<1 | 2 | 3 | 4, DefenderLevelConfig> = {
   1: {
+    // Tightened from ±280ms (was a block-farming machine on swipe spam)
+    // to ±180ms — still wide and forgiving for a "Grandpa" but no longer
+    // a guaranteed block.
     id: 1,
     name: 'Grandpa',
     windupMsMin: 1100, windupMsMax: 1300,
-    earlyWindowMs: 350, perfectWindowMs: 280, lateWindowMs: 250,
+    earlyWindowMs: 350, perfectWindowMs: 180, lateWindowMs: 250,
     fakeChance: 0,
     rhythmJitterMs: 80,
     botMakeProb: 0.35,
   },
   2: {
+    // Spec: "Level 2 (Rec League): moderate speed, short telegraph." No fakes.
+    // Was 0.1; flipped to 0 to match spec.
     id: 2,
     name: 'Rec League',
     windupMsMin: 800, windupMsMax: 1000,
-    earlyWindowMs: 280, perfectWindowMs: 180, lateWindowMs: 180,
-    fakeChance: 0.1,
+    earlyWindowMs: 280, perfectWindowMs: 130, lateWindowMs: 180,
+    fakeChance: 0,
     rhythmJitterMs: 140,
     botMakeProb: 0.5,
   },
@@ -125,7 +130,7 @@ export const DEFENDER_LEVELS: Record<1 | 2 | 3 | 4, DefenderLevelConfig> = {
     id: 3,
     name: 'Pro',
     windupMsMin: 550, windupMsMax: 750,
-    earlyWindowMs: 220, perfectWindowMs: 120, lateWindowMs: 140,
+    earlyWindowMs: 220, perfectWindowMs: 100, lateWindowMs: 140,
     fakeChance: 0.25,
     rhythmJitterMs: 220,
     botMakeProb: 0.62,
@@ -134,7 +139,7 @@ export const DEFENDER_LEVELS: Record<1 | 2 | 3 | 4, DefenderLevelConfig> = {
     id: 4,
     name: 'Alien',
     windupMsMin: 380, windupMsMax: 600,
-    earlyWindowMs: 180, perfectWindowMs: 80,  lateWindowMs: 110,
+    earlyWindowMs: 180, perfectWindowMs: 70,  lateWindowMs: 110,
     fakeChance: 0.5,
     rhythmJitterMs: 320,
     botMakeProb: 0.7,

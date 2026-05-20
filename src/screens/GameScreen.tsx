@@ -29,6 +29,10 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
     initGameState({ mode, defenderLevel })
   );
 
+  // Cross-turn power-up state. `doubleJumpAvailable` carries from offense
+  // (when collected) into the next defense turn.
+  const [doubleJumpAvailable, setDoubleJumpAvailable] = React.useState(false);
+
   // Schedule a coin-flip resolution exactly once at the start.
   React.useEffect(() => {
     if (state.phase !== 'COIN_FLIP') return;
@@ -69,7 +73,16 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
   // Per-shot callbacks (currently unused by the loop directly, but useful
   // hooks for analytics / highlight buffer in Phase 8).
   const handleOffenseShot = React.useCallback((_e: ShotResolvedEvent) => {}, []);
-  const handleDefenseShot = React.useCallback((_e: DefenseShotResolved) => {}, []);
+  const handleDefenseShot = React.useCallback((_e: DefenseShotResolved) => {
+    // When defense uses Double Jump, the OffenseScreen's effects bag is
+    // gone; we just consume our cross-turn flag locally.
+    if (doubleJumpAvailable) setDoubleJumpAvailable(false);
+  }, [doubleJumpAvailable]);
+
+  /** Called by OffenseScreen when a power-up is collected. */
+  const handlePowerUpCollected = React.useCallback((kind: string) => {
+    if (kind === 'doubleJump') setDoubleJumpAvailable(true);
+  }, []);
 
   const renderActiveScreen = (s: GameState) => {
     switch (s.phase) {
@@ -100,10 +113,14 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
             defenderLevel={s.defenderLevel}
             onTurnEnd={handleOffenseTurnEnd}
             onShotResolved={handleOffenseShot}
-            playerLabel={
-              s.activePlayer === 'P1' ? 'PLAYER 1' :
-              s.activePlayer === 'P2' ? 'PLAYER 2' : 'BOT'
-            }
+            onPowerUpCollected={handlePowerUpCollected}
+            playerLabel={s.activePlayer === 'P1' ? 'PLAYER 1' : 'PLAYER 2'}
+            matchScores={{
+              p1: s.scores.P1.points,
+              opp: s.mode === 'vsBot' ? s.scores.BOT.points : s.scores.P2.points,
+            }}
+            matchTimeRemainingSec={s.gameTimeRemainingSec}
+            matchMode={s.mode}
           />
         );
       case 'DEFENSE':
@@ -112,10 +129,14 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
             defenderLevel={s.defenderLevel}
             onTurnEnd={handleDefenseTurnEnd}
             onShotResolved={handleDefenseShot}
-            playerLabel={
-              s.activePlayer === 'P1' ? 'PLAYER 1' :
-              s.activePlayer === 'P2' ? 'PLAYER 2' : 'YOU'
-            }
+            playerLabel={s.activePlayer === 'P1' ? 'PLAYER 1' : 'PLAYER 2'}
+            matchScores={{
+              p1: s.scores.P1.points,
+              opp: s.mode === 'vsBot' ? s.scores.BOT.points : s.scores.P2.points,
+            }}
+            matchTimeRemainingSec={s.gameTimeRemainingSec}
+            matchMode={s.mode}
+            doubleJumpAvailable={doubleJumpAvailable}
           />
         );
       case 'PASS_PHONE':

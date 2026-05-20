@@ -95,12 +95,28 @@ export type GameAction =
 export function gameReducer(state: GameState, action: GameAction): GameState {
   switch (action.type) {
     case 'COIN_FLIP_RESOLVED': {
-      // Set the active player from the coin flip winner; first turn = OFFENSE.
+      // Coin flip semantics:
+      // - vs-bot: activePlayer is always P1 (the human). Flip decides
+      //   whether P1 starts on OFFENSE (P1 won) or DEFENSE (BOT won).
+      // - local 2P: both players are humans. Flip directly picks who
+      //   starts on OFFENSE; activePlayer = winner, role = OFFENSE.
+      if (state.mode === 'vsBot') {
+        const p1WonToss = action.winner === 'P1';
+        return {
+          ...state,
+          phase: 'ANNOUNCE',
+          coinFlipWinner: action.winner,
+          activePlayer: 'P1',
+          currentRole: p1WonToss ? 'OFFENSE' : 'DEFENSE',
+        };
+      }
+      // local 2P
+      const humanWinner: Player = action.winner === 'P2' ? 'P2' : 'P1';
       return {
         ...state,
         phase: 'ANNOUNCE',
-        coinFlipWinner: action.winner,
-        activePlayer: action.winner,
+        coinFlipWinner: humanWinner,
+        activePlayer: humanWinner,
         currentRole: 'OFFENSE',
       };
     }
@@ -228,7 +244,13 @@ export function flipCoin(rng: () => number = Math.random): Player {
   return rng() < 0.5 ? 'P1' : (/* mode-dependent fallback */ 'BOT');
 }
 
-/** Pick a coin flip with knowledge of the mode (so 2P never picks BOT). */
+/**
+ * Coin flip decides who starts on OFFENSE.
+ * - vsBot: returns 'P1' (P1 starts shooting) or 'BOT' (P1 starts defending).
+ *   The active player on screen is ALWAYS P1 in vs-bot; the "winner"
+ *   is purely narrative for the announcer.
+ * - 2P: returns 'P1' or 'P2'.
+ */
 export function flipCoinForMode(
   mode: GameMode,
   rng: () => number = Math.random

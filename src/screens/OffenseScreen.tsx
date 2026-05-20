@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CourtBackground } from '@/components/CourtBackground';
 import { BasketSprite } from '@/components/BasketSprite';
 import { DefenderSprite } from '@/components/DefenderSprite';
+import { MatchScoreboard } from '@/components/MatchScoreboard';
 import { PowerMeter } from '@/components/PowerMeter';
 import { BallSprite } from '@/components/BallSprite';
 import { PowerUpSprite } from '@/components/PowerUpSprite';
@@ -65,7 +66,14 @@ interface OffenseScreenProps {
   turnSeconds?: number;
   onTurnEnd?: (pointsScored: number) => void;
   onShotResolved?: (event: ShotResolvedEvent) => void;
+  /** Called whenever the player walks over a power-up. */
+  onPowerUpCollected?: (kind: string) => void;
   playerLabel?: string;
+  /** Match-level info for the persistent scoreboard. Optional so the
+   * screen still works in standalone preview / dev navigation. */
+  matchScores?: { p1: number; opp: number };
+  matchTimeRemainingSec?: number;
+  matchMode?: 'vsBot' | 'local2P';
 }
 
 export interface ShotResolvedEvent {
@@ -110,7 +118,11 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   turnSeconds = TURN_DURATION_SEC,
   onTurnEnd,
   onShotResolved,
+  onPowerUpCollected,
   playerLabel = 'PLAYER',
+  matchScores,
+  matchTimeRemainingSec,
+  matchMode = 'vsBot',
 }) => {
   // Measure the play area directly via onLayout so we don't depend on
   // potentially-mismatched useWindowDimensions on web.
@@ -221,6 +233,14 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     return () => clearTimeout(id);
   }, [timeRemaining, turnEnded]);
 
+  // If the GLOBAL match timer hits 0, end this turn immediately too
+  // — the match clock takes priority over the turn clock.
+  React.useEffect(() => {
+    if (turnEnded) return;
+    if (matchTimeRemainingSec === undefined) return;
+    if (matchTimeRemainingSec <= 0) setTurnEnded(true);
+  }, [matchTimeRemainingSec, turnEnded]);
+
   // ----- Defender tick -----
   React.useEffect(() => {
     let raf = 0;
@@ -277,11 +297,12 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       const puPx = arcLeftX + powerUp.arcPos * arcLengthPx;
       if (Math.abs(playerPx - puPx) <= POWERUP_PICKUP_RADIUS_PX) {
         setEffects((e) => applyPowerUp(e, powerUp.kind, performance.now()));
+        onPowerUpCollected?.(powerUp.kind);
         setPowerUp(null);
       }
     }, 60);
     return () => clearInterval(id);
-  }, [powerUp, arcLeftX, arcLengthPx, playerArcPos]);
+  }, [powerUp, arcLeftX, arcLengthPx, playerArcPos, onPowerUpCollected]);
 
   // ----- Trajectory tick (only while pulling) -----
   React.useEffect(() => {
@@ -636,19 +657,29 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         )}
       </View>
 
-      {/* HUD */}
-      <SafeAreaView edges={['top']} style={styles.hudRow} pointerEvents="box-none">
-        <PixelBorderPanel innerPadding={6}>
-          <Text style={styles.hudText}>{playerLabel}</Text>
-          <Text style={styles.hudScore}>{score}</Text>
-        </PixelBorderPanel>
-        <PixelBorderPanel innerPadding={6}>
-          <Text style={styles.hudText}>TIME</Text>
-          <Text style={[styles.hudScore, timeRemaining <= 5 ? { color: PALETTE.redHot } : undefined]}>
-            {timeRemaining}
-          </Text>
-        </PixelBorderPanel>
-      </SafeAreaView>
+      {/* HUD: match scoreboard if provided, otherwise legacy turn-only HUD. */}
+      {matchScores && matchTimeRemainingSec !== undefined ? (
+        <MatchScoreboard
+          mode={matchMode}
+          p1Score={matchScores.p1 + score}
+          oppScore={matchScores.opp}
+          turnTimeSec={timeRemaining}
+          matchTimeSec={matchTimeRemainingSec}
+        />
+      ) : (
+        <SafeAreaView edges={['top']} style={styles.hudRow} pointerEvents="box-none">
+          <PixelBorderPanel innerPadding={6}>
+            <Text style={styles.hudText}>{playerLabel}</Text>
+            <Text style={styles.hudScore}>{score}</Text>
+          </PixelBorderPanel>
+          <PixelBorderPanel innerPadding={6}>
+            <Text style={styles.hudText}>TIME</Text>
+            <Text style={[styles.hudScore, timeRemaining <= 5 ? { color: PALETTE.redHot } : undefined]}>
+              {timeRemaining}
+            </Text>
+          </PixelBorderPanel>
+        </SafeAreaView>
+      )}
 
       {activeBadges.length > 0 && (
         <View style={styles.badgesRow} pointerEvents="none">

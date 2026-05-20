@@ -41,13 +41,30 @@ describe('flipCoinForMode', () => {
 });
 
 describe('gameReducer — COIN_FLIP_RESOLVED', () => {
-  test('transitions to ANNOUNCE with active=winner, role=OFFENSE', () => {
+  test('vs-bot, P1 wins: P1 starts on OFFENSE', () => {
+    const s0 = initGameState({ mode: 'vsBot' });
+    const s1 = gameReducer(s0, { type: 'COIN_FLIP_RESOLVED', winner: 'P1' });
+    expect(s1.phase).toBe('ANNOUNCE');
+    expect(s1.activePlayer).toBe('P1');
+    expect(s1.currentRole).toBe('OFFENSE');
+    expect(s1.coinFlipWinner).toBe('P1');
+  });
+
+  test('vs-bot, BOT wins: P1 starts on DEFENSE (still active player, never BOT)', () => {
     const s0 = initGameState({ mode: 'vsBot' });
     const s1 = gameReducer(s0, { type: 'COIN_FLIP_RESOLVED', winner: 'BOT' });
     expect(s1.phase).toBe('ANNOUNCE');
-    expect(s1.activePlayer).toBe('BOT');
-    expect(s1.currentRole).toBe('OFFENSE');
+    expect(s1.activePlayer).toBe('P1');
+    expect(s1.currentRole).toBe('DEFENSE');
     expect(s1.coinFlipWinner).toBe('BOT');
+  });
+
+  test('local 2P, P2 wins: P2 starts on OFFENSE', () => {
+    const s0 = initGameState({ mode: 'local2P' });
+    const s1 = gameReducer(s0, { type: 'COIN_FLIP_RESOLVED', winner: 'P2' });
+    expect(s1.activePlayer).toBe('P2');
+    expect(s1.currentRole).toBe('OFFENSE');
+    expect(s1.coinFlipWinner).toBe('P2');
   });
 });
 
