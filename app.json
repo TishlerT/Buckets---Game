@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Buckets",
+    "slug": "buckets",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "scheme": "buckets",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b0d1a"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.buckets.game",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Buckets needs access to save your highlight reels to your camera roll.",
+        "NSPhotoLibraryAddUsageDescription": "Buckets needs access to save your highlight reels to your camera roll."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0b0d1a"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.buckets.game",
+      "permissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Buckets saves your highlight reels to your camera roll.",
+          "savePhotosPermission": "Buckets saves your highlight reels to your camera roll.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      "expo-font",
+      "expo-audio"
+    ]
+  }
+}
