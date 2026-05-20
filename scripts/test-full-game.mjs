@@ -140,9 +140,26 @@ async function swipeUp(page, vw, vh) {
   const final = await page.evaluate(() => {
     const txt = document.body.textContent || '';
     const winnerMatch = txt.match(/(YOU WIN|BOT WINS|PLAYER 2 WINS|TIE GAME)/);
-    return { winner: winnerMatch ? winnerMatch[1] : null, sample: txt.slice(0, 400) };
+    return {
+      winner: winnerMatch ? winnerMatch[1] : null,
+      hasHighlightBtn: txt.includes('HIGHLIGHT!'),
+      sample: txt.slice(0, 500),
+    };
   });
   console.log('FINAL:', final);
+
+  // Click HIGHLIGHT! if present
+  if (final.hasHighlightBtn) {
+    await sleep(1000);
+    try {
+      await clickByLabel(page, 'HIGHLIGHT!');
+      await sleep(2000);
+      await page.screenshot({ path: '/opt/cursor/artifacts/full_game_highlight.png' });
+      console.log('captured highlight screen');
+    } catch (e) {
+      console.log('failed to navigate to highlight:', e.message);
+    }
+  }
 
   await browser.close();
 })();

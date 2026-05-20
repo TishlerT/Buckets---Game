@@ -7,6 +7,13 @@ import { PassThePhoneScreen } from './PassThePhoneScreen';
 import { OffenseScreen, ShotResolvedEvent } from './OffenseScreen';
 import { DefenseScreen, DefenseShotResolved } from './DefenseScreen';
 import { ScoreScreen } from './ScoreScreen';
+import { HighlightScreen } from './HighlightScreen';
+import {
+  HighlightSnapshot,
+  makeContestedMake,
+  makePerfectBlock,
+  pickBestHighlight,
+} from '@/game/highlights';
 import {
   GameAction,
   GameState,
@@ -42,6 +49,11 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
   const xpAwardedRef = React.useRef(false);
   const [paused, setPaused] = React.useState(false);
 
+  // Highlight ring buffer — captures contested makes + perfect blocks.
+  const highlightBufferRef = React.useRef<HighlightSnapshot[]>([]);
+  const [highlightToShow, setHighlightToShow] = React.useState<HighlightSnapshot | null>(null);
+  const [showingHighlight, setShowingHighlight] = React.useState(false);
+
   // Background music: start on first OFFENSE/DEFENSE, stop on END / unmount.
   React.useEffect(() => {
     if (state.phase === 'OFFENSE' || state.phase === 'DEFENSE') {
@@ -58,13 +70,17 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
   React.useEffect(() => {
     if (state.phase !== 'END') return;
     if (xpAwardedRef.current) return;
-    if (state.mode !== 'vsBot') return;
-    xpAwardedRef.current = true;
-    const result = xpForGameResult({
-      win: state.winner === 'P1',
-      perfectBlocks: state.scores.P1.perfectBlocks,
-    });
-    awardXp(result.total);
+    if (state.mode === 'vsBot') {
+      xpAwardedRef.current = true;
+      const result = xpForGameResult({
+        win: state.winner === 'P1',
+        perfectBlocks: state.scores.P1.perfectBlocks,
+      });
+      awardXp(result.total);
+    }
+    // Pick the best highlight from the buffer (if any) for the score screen.
+    const best = pickBestHighlight(highlightBufferRef.current);
+    setHighlightToShow(best);
   }, [state.phase, state.mode, state.winner, state.scores, awardXp]);
 
   // Schedule a coin-flip resolution exactly once at the start.
@@ -106,14 +122,37 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
     []
   );
 
-  // Per-shot callbacks (currently unused by the loop directly, but useful
-  // hooks for analytics / highlight buffer in Phase 8).
-  const handleOffenseShot = React.useCallback((_e: ShotResolvedEvent) => {}, []);
-  const handleDefenseShot = React.useCallback((_e: DefenseShotResolved) => {
-    // When defense uses Double Jump, the OffenseScreen's effects bag is
-    // gone; we just consume our cross-turn flag locally.
-    if (doubleJumpAvailable) setDoubleJumpAvailable(false);
-  }, [doubleJumpAvailable]);
+  // Per-shot callbacks. We use these to capture highlight candidates.
+  const handleOffenseShot = React.useCallback(
+    (e: ShotResolvedEvent) => {
+      if (e.result === 'make' && e.contested) {
+        highlightBufferRef.current.push(
+          makeContestedMake({
+            points: e.points,
+            playerTotal: state.scores.P1.points + e.points,
+            oppTotal: state.mode === 'vsBot' ? state.scores.BOT.points : state.scores.P2.points,
+            defenderLevel: state.defenderLevel,
+          })
+        );
+      }
+    },
+    [state.scores, state.mode, state.defenderLevel]
+  );
+  const handleDefenseShot = React.useCallback(
+    (e: DefenseShotResolved) => {
+      if (doubleJumpAvailable) setDoubleJumpAvailable(false);
+      if (e.perfectBlock) {
+        highlightBufferRef.current.push(
+          makePerfectBlock({
+            playerTotal: state.scores.P1.points,
+            oppTotal: state.mode === 'vsBot' ? state.scores.BOT.points : state.scores.P2.points,
+            defenderLevel: state.defenderLevel,
+          })
+        );
+      }
+    },
+    [doubleJumpAvailable, state.scores, state.mode, state.defenderLevel]
+  );
 
   /** Called by OffenseScreen when a power-up is collected. */
   const handlePowerUpCollected = React.useCallback((kind: string) => {
@@ -187,13 +226,28 @@ export const GameScreen: React.FC<Props> = ({ route, navigation }) => {
           />
         );
       case 'END':
+        if (showingHighlight && highlightToShow) {
+          return (
+            <HighlightScreen
+              highlight={highlightToShow}
+              onDone={() => setShowingHighlight(false)}
+            />
+          );
+        }
         return (
           <ScoreScreen
             state={s}
-            onRematch={() =>
-              navigation.replace('Game', { mode: s.mode, defenderLevel: s.defenderLevel })
-            }
+            onRematch={() => {
+              setShowingHighlight(false);
+              setHighlightToShow(null);
+              highlightBufferRef.current = [];
+              xpAwardedRef.current = false;
+              navigation.replace('Game', { mode: s.mode, defenderLevel: s.defenderLevel });
+            }}
             onMainMenu={() => navigation.navigate('Home')}
+            onShowHighlight={
+              highlightToShow ? () => setShowingHighlight(true) : undefined
+            }
           />
         );
     }

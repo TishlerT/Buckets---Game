@@ -18,9 +18,11 @@ interface Props {
   /** XP previously earned (for display); pass 0 if first session. */
   onRematch: () => void;
   onMainMenu: () => void;
+  /** When provided, a HIGHLIGHT button appears above REMATCH. */
+  onShowHighlight?: () => void;
 }
 
-export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu }) => {
+export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu, onShowHighlight }) => {
   const winner = state.winner ?? 'TIE';
   const p1 = state.scores.P1;
   const opp =
@@ -100,6 +102,16 @@ export const ScoreScreen: React.FC<Props> = ({ state, onRematch, onMainMenu }) =
         )}
 
         <View style={styles.buttons}>
+          {onShowHighlight && (
+            <>
+              <PixelButton
+                label="HIGHLIGHT!"
+                color={PALETTE.yellowBright}
+                onPress={onShowHighlight}
+              />
+              <View style={{ height: SPACING.md }} />
+            </>
+          )}
           <PixelButton label="REMATCH" color={PALETTE.greenGo} onPress={onRematch} />
           <View style={{ height: SPACING.md }} />
           <PixelButton label="MAIN MENU" color={PALETTE.fog} onPress={onMainMenu} />
