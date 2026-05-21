@@ -22,6 +22,10 @@ import {
 import { BucketsHud } from '@/components/BucketsHud';
 import { HorizontalPowerMeter } from '@/components/HorizontalPowerMeter';
 import { BallSprite } from '@/components/BallSprite';
+import { BallShadow } from '@/components/BallShadow';
+import { ContestedGlow } from '@/components/ContestedGlow';
+import { CrowdReaction } from '@/components/CrowdReaction';
+import { FlashText } from '@/components/FlashText';
 import { PowerUpSprite } from '@/components/PowerUpSprite';
 import { PixelButton } from '@/components/PixelButton';
 import { PixelBorderPanel } from '@/components/PixelBorderPanel';
@@ -225,6 +229,13 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   const [shakeTrigger, setShakeTrigger] = React.useState(0);
   const [starBurstTrigger, setStarBurstTrigger] = React.useState(0);
   const [smokeTrigger, setSmokeTrigger] = React.useState(0);
+  const [crowdTrigger, setCrowdTrigger] = React.useState(0);
+  /** Center-screen flash text for "PERFECT!" / "BLOCKED!" / etc. */
+  const [flashState, setFlashState] = React.useState<{
+    trigger: number;
+    text: string;
+    color: string;
+  }>({ trigger: 0, text: '', color: PALETTE.yellowBright });
   const [ballHidden, setBallHidden] = React.useState(false);
   const [resultBanner, setResultBanner] = React.useState<{ text: string; color: string } | null>(null);
   const [turnEnded, setTurnEnded] = React.useState(false);
@@ -520,11 +531,20 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     if (result === 'make') {
       playSfx('swish');
       mediumTap();
+      // Every make rouses the crowd.
+      setCrowdTrigger((t) => t + 1);
       if (contested) {
         playSfx('cheer');
         setShakeTrigger((t) => t + 1);
         setStarBurstTrigger((t) => t + 1);
         heavyTap();
+      }
+      if (perfectRelease) {
+        setFlashState({
+          trigger: Date.now(),
+          text: 'PERFECT!',
+          color: PALETTE.yellowBright,
+        });
       }
     } else {
       playSfx('brick');
@@ -609,12 +629,23 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   const [defenderRenderState, setDefenderRenderState] = React.useState<CloseoutDefenderState>(
     'closeoutA'
   );
+  /**
+   * JS-side mirror of (playerArcPos, defender closeness) so the contested
+   * glow can position itself with React layout props. Updated at ~10Hz,
+   * which is plenty for a glow that crossfades over hundreds of ms.
+   */
+  const [playerArcPosRender, setPlayerArcPosRender] = React.useState(0.5);
+  const [defenderClosenessRender, setDefenderClosenessRender] = React.useState(0);
   React.useEffect(() => {
     const id = setInterval(() => {
       const cur = defenderArcPos.value;
       const speed = Math.abs(cur - lastDefenderArcRef.current);
       lastDefenderArcRef.current = cur;
       const arcDist = Math.abs(cur - playerArcPos.value);
+      const closeness = Math.max(0, 1 - arcDist * 3);
+      setDefenderClosenessRender(closeness);
+      setPlayerArcPosRender(playerArcPos.value);
+
       let next: CloseoutDefenderState;
       if (speed > 0.003) {
         next =
@@ -626,7 +657,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       }
       defenderStateRef.current = next;
       setDefenderRenderState(next);
-    }, 160);
+    }, 100);
     return () => clearInterval(id);
   }, [defenderArcPos, playerArcPos]);
 
@@ -706,8 +737,16 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         }
       }}
     >
-    <ScreenShake trigger={shakeTrigger} amplitude={4} durationMs={220}>
+    <ScreenShake trigger={shakeTrigger} amplitude={CONFIG.SCREEN_SHAKE_PX} durationMs={CONFIG.SCREEN_SHAKE_MS}>
       <CourtBackground width={width} height={height} court={court} perspective="offense" />
+
+      {/* Crowd reaction overlay — flashes the back-of-court crowd band
+       * whenever the crowd cheers (every make / block). */}
+      <CrowdReaction
+        trigger={crowdTrigger}
+        top={height * 0.32 - 4}
+        height={height * LAYOUT.crowdBandHeightFraction}
+      />
 
       <View style={[styles.basketWrap, { top: basketTopY, left: width / 2 - basketSize / 2 }]}>
         <BasketSprite size={basketSize} big={effects.biggerRimNextShot} />
@@ -744,6 +783,15 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         </View>
       )}
 
+      {/* Contested glow — pulsates under the shooter when defender is in
+       * contest range. Player can FEEL the pressure even before shooting. */}
+      <ContestedGlow
+        visible={defenderClosenessRender > 0.55 && !shotInProgress}
+        cx={arcLeftX + playerArcPosRender * arcLengthPx}
+        cy={playerY - LAYOUT.shooterSpritePx * 0.55}
+        size={LAYOUT.shooterSpritePx * 1.35}
+      />
+
       {/* Back-facing shooter, anchored center-bottom on the arc position.
        * He's the same sprite from idle through windup/release/celebrate —
        * pose comes from `shooterState`. */}
@@ -758,9 +806,17 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       {/* In-flight ball — separate sprite that follows the bezier. Hidden
        * while the shooter is holding it (idle/windup) and after the result. */}
       {shotInProgress && !ballHidden && (
-        <Animated.View style={[styles.absolute, ballAnimStyle]} pointerEvents="none">
-          <BallSprite size={LAYOUT.ballSpritePx} skin={ballSkin} />
-        </Animated.View>
+        <>
+          <BallShadow
+            ballX={ballX}
+            ballY={ballY}
+            floorY={playerY}
+            ballSize={LAYOUT.ballSpritePx}
+          />
+          <Animated.View style={[styles.absolute, ballAnimStyle]} pointerEvents="none">
+            <BallSprite size={LAYOUT.ballSpritePx} skin={ballSkin} />
+          </Animated.View>
+        </>
       )}
 
 
@@ -853,6 +909,13 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       {/* Particle effects: contested-make star burst + brick smoke puff */}
       <StarBurst trigger={starBurstTrigger} cx={rim.x} cy={rim.y} count={14} maxRadius={140} />
       <SmokePuff trigger={smokeTrigger} cx={rim.x} cy={rim.y + 24} />
+
+      {/* "PERFECT!" / "BLOCKED!" / etc. center-screen flash text. */}
+      <FlashText
+        trigger={flashState.trigger}
+        text={flashState.text}
+        color={flashState.color}
+      />
 
       {turnEnded && (
         <View style={styles.turnOver}>

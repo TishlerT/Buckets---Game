@@ -14,11 +14,14 @@ import { BasketSprite } from '@/components/BasketSprite';
 import { ShooterSprite } from '@/components/ShooterSprite';
 import { TimingFlash } from '@/components/TimingFlash';
 import { ConfettiBurst } from '@/components/ConfettiBurst';
+import { CrowdReaction } from '@/components/CrowdReaction';
+import { FlashText } from '@/components/FlashText';
 import { MatchScoreboard } from '@/components/MatchScoreboard';
 import { PixelButton } from '@/components/PixelButton';
 import { PixelBorderPanel } from '@/components/PixelBorderPanel';
 import { ScreenShake } from '@/components/ScreenShake';
 import {
+  CONFIG,
   DefenderId,
   POINTS_BLOCK_FOR_SHOOTER,
   POINTS_CONTESTED_MAKE,
@@ -150,7 +153,12 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   const [flashTrigger, setFlashTrigger] = React.useState(0);
   const [confettiTrigger, setConfettiTrigger] = React.useState(0);
   const [shakeTrigger, setShakeTrigger] = React.useState(0);
+  const [crowdTrigger, setCrowdTrigger] = React.useState(0);
   const [bannerText, setBannerText] = React.useState<{ text: string; color: string } | null>(null);
+  /** Center-screen flash for "BLOCKED!". */
+  const [bigFlash, setBigFlash] = React.useState<{ trigger: number; text: string; color: string }>({
+    trigger: 0, text: '', color: PALETTE.redHot,
+  });
 
   // ----- Turn timer -----
   React.useEffect(() => {
@@ -246,7 +254,9 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
     setPerfectBlocks((p) => p + 1);
     setConfettiTrigger((c) => c + 1);
     setShakeTrigger((t) => t + 1);
+    setCrowdTrigger((t) => t + 1);
     setBannerText({ text: 'BLOCK!', color: PALETTE.greenGo });
+    setBigFlash({ trigger: Date.now(), text: 'BLOCKED!', color: PALETTE.redHot });
     playSfx('block');
     playSfx('cheer');
     heavyTap();
@@ -401,8 +411,14 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
         if (w !== layout.width || h !== layout.height) setLayout({ width: w, height: h });
       }}
     >
-    <ScreenShake trigger={shakeTrigger} amplitude={5} durationMs={240}>
+    <ScreenShake trigger={shakeTrigger} amplitude={CONFIG.SCREEN_SHAKE_PX} durationMs={CONFIG.SCREEN_SHAKE_MS}>
       <CourtBackground width={width} height={height} court={court} perspective="defense" />
+
+      <CrowdReaction
+        trigger={crowdTrigger}
+        top={height * 0.55 - 4}
+        height={height * 0.1}
+      />
 
       {/* Bot shooter — animates between random arc positions each attempt. */}
       <Animated.View
@@ -495,6 +511,9 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
 
       {/* confetti on perfect block */}
       <ConfettiBurst trigger={confettiTrigger} cx={width / 2} cy={height / 2} count={28} />
+
+      {/* "BLOCKED!" / etc. center-screen flash */}
+      <FlashText trigger={bigFlash.trigger} text={bigFlash.text} color={bigFlash.color} />
 
       {/* turn over overlay */}
       {turnEnded && (

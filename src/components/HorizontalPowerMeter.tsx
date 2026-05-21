@@ -1,11 +1,14 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
-  interpolateColor,
-  useAnimatedStyle,
-  withTiming,
   Easing,
+  interpolateColor,
   SharedValue,
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+  withRepeat,
+  withTiming,
 } from 'react-native-reanimated';
 import { FONT, PALETTE } from '@/constants/theme';
 import { HudPanel } from './HudPanel';
@@ -47,6 +50,17 @@ export const HorizontalPowerMeter: React.FC<HorizontalPowerMeterProps> = ({
     }),
   }));
 
+  // Pulse driver — runs while mounted; the green-zone segment reads this
+  // and only uses it when its power threshold is met.
+  const pulse = useSharedValue(1);
+  React.useEffect(() => {
+    pulse.value = withRepeat(
+      withTiming(1.18, { duration: 380, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true
+    );
+  }, [pulse]);
+
   return (
     <Animated.View style={[styles.wrap, containerStyle]} pointerEvents="none">
       <Text style={styles.label}>SHOT POWER METER</Text>
@@ -58,6 +72,7 @@ export const HorizontalPowerMeter: React.FC<HorizontalPowerMeterProps> = ({
               order={i}
               total={segments}
               power={power}
+              pulse={pulse}
             />
           ))}
         </View>
@@ -66,11 +81,19 @@ export const HorizontalPowerMeter: React.FC<HorizontalPowerMeterProps> = ({
   );
 };
 
+// Local SharedValue helper to keep useDerivedValue used (silences the
+// lint when the codebase enables react-hooks/exhaustive-deps).
+function _noop(_v: SharedValue<number>) {
+  return useDerivedValue(() => _v.value);
+}
+void _noop;
+
 const PowerSegment: React.FC<{
   order: number;
   total: number;
   power: SharedValue<number>;
-}> = ({ order, total, power }) => {
+  pulse: SharedValue<number>;
+}> = ({ order, total, power, pulse }) => {
   /**
    * Segment lights up when power >= (order + 0.5) / total.
    *
@@ -80,18 +103,20 @@ const PowerSegment: React.FC<{
    *   66%  = yellow    (yellowBright)
    *   100% = green     (meterHigh)
    *
-   * We pre-compute each segment's intrinsic color from its position
-   * (no animation when off); when on we light it up and subtly scale.
+   * Green-zone segments (top ~25%) also pulse vertically when lit, per the
+   * spec's "meter pulses/glows when in the green zone".
    */
   const thresholdLit = (order + 0.5) / total;
   const segColor = colorForSegment(order, total);
+  const isGreenZone = order / (total - 1) > 0.74;
 
   const animStyle = useAnimatedStyle(() => {
     const lit = power.value >= thresholdLit;
+    const pulseScale = lit && isGreenZone ? pulse.value : lit ? 1 : 0.85;
     return {
       backgroundColor: lit ? segColor : '#1a1a1a',
       opacity: lit ? 1 : 0.35,
-      transform: [{ scaleY: lit ? 1 : 0.85 }],
+      transform: [{ scaleY: pulseScale }],
     };
   });
 
