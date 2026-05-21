@@ -10,12 +10,11 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, Line } from 'react-native-svg';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { CourtBackground } from '@/components/CourtBackground';
 import { BasketSprite } from '@/components/BasketSprite';
 import { DefenderSprite } from '@/components/DefenderSprite';
-import { MatchScoreboard } from '@/components/MatchScoreboard';
-import { PowerMeter } from '@/components/PowerMeter';
+import { BucketsHud } from '@/components/BucketsHud';
+import { HorizontalPowerMeter } from '@/components/HorizontalPowerMeter';
 import { BallSprite } from '@/components/BallSprite';
 import { PowerUpSprite } from '@/components/PowerUpSprite';
 import { PixelButton } from '@/components/PixelButton';
@@ -24,10 +23,10 @@ import { ScreenShake } from '@/components/ScreenShake';
 import { StarBurst } from '@/components/StarBurst';
 import { SmokePuff } from '@/components/SmokePuff';
 import {
-  AIM_SENSITIVITY,
   ARC_SLIDE_SPEED,
   BASKET_RIM_PIXEL_FUDGE_PX,
   BASKET_RIM_Y_FACTOR,
+  CONFIG,
   DefenderId,
   LAYOUT,
   PLAYER_ARC_MAX,
@@ -204,6 +203,9 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   // ----- React state (logic on JS thread) -----
   const [score, setScore] = React.useState(0);
   const [timeRemaining, setTimeRemaining] = React.useState(turnSeconds);
+  // Per-shot shot clock — resets to CONFIG.SHOT_CLOCK_SEC whenever a new
+  // shot opportunity begins. Surfaces in the BucketsHud SHOT CLOCK panel.
+  const [shotClockSec, setShotClockSec] = React.useState<number>(CONFIG.SHOT_CLOCK_SEC);
   const [effects, setEffects] = React.useState<PlayerEffects>(EMPTY_EFFECTS);
   const [powerUp, setPowerUp] = React.useState<PowerUpInstance | null>(null);
   const [powerUpFrame, setPowerUpFrame] = React.useState<0 | 1>(0);
@@ -257,6 +259,23 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     const id = setTimeout(() => setTimeRemaining((s) => s - 1), 1000);
     return () => clearTimeout(id);
   }, [timeRemaining, turnEnded, paused]);
+
+  // ----- Shot clock — counts down per shot opportunity. Resets every time
+  // a new shot becomes available (right after a result resolves) or when a
+  // shot fires. If it hits 0, force a brick (auto-miss). -----
+  React.useEffect(() => {
+    if (turnEnded || paused) return;
+    if (shotInProgress) return; // freeze shot clock while ball is in air
+    if (shotClockSec <= 0) {
+      // Auto-shot violation: treat as a brick miss.
+      setShotClockSec(CONFIG.SHOT_CLOCK_SEC);
+      setResultBanner({ text: 'SHOT CLOCK VIOLATION', color: PALETTE.redHot });
+      setTimeout(() => setResultBanner(null), CONFIG.FLASH_TEXT_DURATION_MS);
+      return;
+    }
+    const id = setTimeout(() => setShotClockSec((s) => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [shotClockSec, shotInProgress, turnEnded, paused]);
 
   // If the GLOBAL match timer hits 0, end this turn immediately too
   // — the match clock takes priority over the turn clock.
@@ -421,6 +440,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
 
     setShotInProgress(true);
     shotInProgressShared.value = 1; // flip immediately, don't wait for next render
+    setShotClockSec(CONFIG.SHOT_CLOCK_SEC); // shooting resets the shot clock for next attempt
     setEffects((e) => consumeOnShot(e));
 
     // Push bezier params into shared values for the UI-thread reactor.
@@ -653,12 +673,9 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       )}
 
 
-      {/* Power meter */}
-      <View
-        style={[styles.powerMeterWrap, { right: 14, top: shootZoneTop + 16 }]}
-        pointerEvents="none"
-      >
-        <PowerMeter power={power} />
+      {/* Horizontal segmented power meter — bottom right, hidden until pulling. */}
+      <View style={[styles.powerMeterWrap]} pointerEvents="none">
+        <HorizontalPowerMeter power={power} visible={isPulling} />
       </View>
 
       {/* Gesture zones: TWO separate overlays (upper = slide, lower = shoot)
@@ -705,31 +722,24 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         )}
       </View>
 
-      {/* HUD: match scoreboard if provided, otherwise legacy turn-only HUD. */}
-      {matchScores && matchTimeRemainingSec !== undefined ? (
-        <MatchScoreboard
-          mode={matchMode}
-          // In 2P, the active player's live points feed THEIR column. In
-          // vs-bot, P1 is always the active player on offense.
-          p1Score={matchScores.p1 + (activePlayer === 'P1' ? score : 0)}
-          oppScore={matchScores.opp + (activePlayer === 'P2' ? score : 0)}
-          turnTimeSec={timeRemaining}
-          matchTimeSec={matchTimeRemainingSec}
-        />
-      ) : (
-        <SafeAreaView edges={['top']} style={styles.hudRow} pointerEvents="box-none">
-          <PixelBorderPanel innerPadding={6}>
-            <Text style={styles.hudText}>{playerLabel}</Text>
-            <Text style={styles.hudScore}>{score}</Text>
-          </PixelBorderPanel>
-          <PixelBorderPanel innerPadding={6}>
-            <Text style={styles.hudText}>TIME</Text>
-            <Text style={[styles.hudScore, timeRemaining <= 5 ? { color: PALETTE.redHot } : undefined]}>
-              {timeRemaining}
-            </Text>
-          </PixelBorderPanel>
-        </SafeAreaView>
-      )}
+      {/* New BucketsHud — matches Reference Image 2 exactly.
+       * Top-left scores, top-center HOME/TIME/GUEST + action label,
+       * top-right large red CLOCK, bottom-left SHOT CLOCK. */}
+      <BucketsHud
+        p1Score={(matchScores?.p1 ?? 0) + (activePlayer === 'P1' || !matchScores ? score : 0)}
+        p2Score={(matchScores?.opp ?? 0) + (activePlayer === 'P2' ? score : 0)}
+        matchTimeSec={matchTimeRemainingSec ?? timeRemaining}
+        shotClockSec={shotClockSec}
+        turnClockSec={timeRemaining}
+        p1Label={activePlayer === 'P2' ? 'PLAYER 2' : 'PLAYER 1'}
+        p2Label={matchMode === 'vsBot' ? 'BOT' : activePlayer === 'P2' ? 'P1' : 'P2'}
+        actionLabel="3PT ATTEMPT"
+      />
+      {/* Player label retained for screen-reader friendliness on the
+       * underlying view; intentionally invisible. */}
+      <Text style={styles.srOnly} accessibilityRole="text">
+        {playerLabel}
+      </Text>
 
       {activeBadges.length > 0 && (
         <View style={styles.badgesRow} pointerEvents="none">
@@ -941,7 +951,18 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: PALETTE.black, overflow: 'hidden' },
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   absolute: { position: 'absolute', top: 0, left: 0 },
-  powerMeterWrap: { position: 'absolute' },
+  powerMeterWrap: {
+    position: 'absolute',
+    right: 14,
+    bottom: 20,
+    alignItems: 'flex-end',
+  },
+  srOnly: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
   basketWrap: { position: 'absolute' },
   zoneSlide: {
     position: 'absolute',
