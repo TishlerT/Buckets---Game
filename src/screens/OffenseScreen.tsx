@@ -170,7 +170,9 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
 
   // ----- UI-thread shared state -----
   const playerArcPos = useSharedValue(0.5);
-  const defenderArcPos = useSharedValue(0.5);
+  // Spec: "Defender starts at a random position on the arc." Pick once at
+  // mount so each turn has a different opening look.
+  const defenderArcPos = useSharedValue(0.25 + Math.random() * 0.5);
 
   /**
    * Gesture role:

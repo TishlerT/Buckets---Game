@@ -1,7 +1,13 @@
 import React from 'react';
 import { Platform, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { runOnJS } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CourtBackground } from '@/components/CourtBackground';
 import { BasketSprite } from '@/components/BasketSprite';
@@ -344,11 +350,42 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
   };
 
   // ----- Layout -----
-  // Defense perspective: shooter is FAR (top) and small; the basket is at our feet (bottom).
+  // Defense perspective: shooter is mid-distance, basket is "at our feet"
+  // (camera is the defender). The shooter slides between random arc spots
+  // before each wind-up so the player has to read where the shot will come
+  // from instead of staring at a static target.
   const basketSize = Math.min(width * 0.5, 200);
   const shooterSize = Math.min(width * 0.5, 200);
   const shooterTopY = height * 0.18;
   const basketTopY = height * 0.62;
+
+  // Shared X position for the bot shooter — animates between attempts.
+  const shooterX = useSharedValue(width / 2);
+  React.useEffect(() => {
+    shooterX.value = width / 2;
+  }, [width, shooterX]);
+
+  /**
+   * When the FSM enters IDLE (a new attempt is starting), pick a fresh
+   * X for the shooter inside the 3PT zone and animate over ~600ms so
+   * the player can see where the next attempt will come from. The IDLE
+   * phase already pauses for ~700ms before WINDUP so we have room.
+   */
+  React.useEffect(() => {
+    if (state.phase !== 'IDLE') return;
+    const minX = width * 0.18;
+    const maxX = width * 0.82;
+    const target = minX + Math.random() * (maxX - minX);
+    shooterX.value = withTiming(target, {
+      duration: 550,
+      easing: Easing.out(Easing.quad),
+    });
+  }, [state.phase, state.phaseStartedAtMs, width, shooterX]);
+
+  const shooterAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shooterX.value - shooterSize / 2 }],
+  }));
+
   const flashCx = width / 2;
   const flashCy = shooterTopY + shooterSize * 0.4;
 
@@ -367,9 +404,9 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
     <ScreenShake trigger={shakeTrigger} amplitude={5} durationMs={240}>
       <CourtBackground width={width} height={height} court={court} perspective="defense" />
 
-      {/* shooter */}
-      <View
-        style={[styles.shooterWrap, { top: shooterTopY, left: width / 2 - shooterSize / 2 }]}
+      {/* Bot shooter — animates between random arc positions each attempt. */}
+      <Animated.View
+        style={[styles.shooterWrap, { top: shooterTopY }, shooterAnimStyle]}
         pointerEvents="none"
       >
         <ShooterSprite
@@ -378,7 +415,7 @@ export const DefenseScreen: React.FC<DefenseScreenProps> = ({
           variant={shooterVariant ?? DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
           flashing={flashing}
         />
-      </View>
+      </Animated.View>
 
       {/* telegraph flash (rings) */}
       <View
