@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -9,10 +9,16 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, Line } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { CourtBackground } from '@/components/CourtBackground';
 import { BasketSprite } from '@/components/BasketSprite';
-import { DefenderSprite } from '@/components/DefenderSprite';
+// Legacy DefenderSprite kept as fallback if a screen needs the old top-down
+// look; OffenseScreen now uses CloseoutDefenderSprite for the new camera.
+import { BackShooterSprite, BackShooterState } from '@/components/BackShooterSprite';
+import {
+  CloseoutDefenderSprite,
+  CloseoutDefenderState,
+} from '@/components/CloseoutDefenderSprite';
 import { BucketsHud } from '@/components/BucketsHud';
 import { HorizontalPowerMeter } from '@/components/HorizontalPowerMeter';
 import { BallSprite } from '@/components/BallSprite';
@@ -209,7 +215,10 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   const [effects, setEffects] = React.useState<PlayerEffects>(EMPTY_EFFECTS);
   const [powerUp, setPowerUp] = React.useState<PowerUpInstance | null>(null);
   const [powerUpFrame, setPowerUpFrame] = React.useState<0 | 1>(0);
-  const [defenderFrame, setDefenderFrame] = React.useState<0 | 1>(0);
+  /** Tracks which back-shooter pose to render. Derived from gesture +
+   * shot lifecycle so the sprite reads exactly what the player is doing. */
+  const [shooterState, setShooterState] = React.useState<BackShooterState>('idle');
+  const [shooterSubFrame, setShooterSubFrame] = React.useState<0 | 1>(0);
   const [shotInProgress, setShotInProgress] = React.useState(false);
   const [shakeTrigger, setShakeTrigger] = React.useState(0);
   const [starBurstTrigger, setStarBurstTrigger] = React.useState(0);
@@ -311,13 +320,27 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
 
   // ----- Sprite frame swap timers -----
   React.useEffect(() => {
-    const id = setInterval(() => setDefenderFrame((f) => (f === 0 ? 1 : 0)), 170);
-    return () => clearInterval(id);
-  }, []);
-  React.useEffect(() => {
     const id = setInterval(() => setPowerUpFrame((f) => (f === 0 ? 1 : 0)), 240);
     return () => clearInterval(id);
   }, []);
+  // Back-shooter sub-frame cycles 0↔1 at ~7Hz so wind-up + walk animate.
+  React.useEffect(() => {
+    const id = setInterval(() => setShooterSubFrame((f) => (f === 0 ? 1 : 0)), 140);
+    return () => clearInterval(id);
+  }, []);
+
+  // ----- Derive shooter pose from gesture + shot lifecycle -----
+  React.useEffect(() => {
+    if (shotInProgress) {
+      setShooterState('release');
+      return;
+    }
+    if (isPulling) {
+      setShooterState('windup');
+      return;
+    }
+    setShooterState('idle');
+  }, [isPulling, shotInProgress]);
 
   // ----- Power-up spawn / lifetime / pickup -----
   React.useEffect(() => {
@@ -535,22 +558,75 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
     };
   });
 
+  /**
+   * Back-shooter is centered horizontally on the player's arc position with
+   * his feet at playerY. He's wide (~140px) so we anchor by the sprite's
+   * center-bottom.
+   */
   const playerAnimStyle = useAnimatedStyle(() => {
     const x = arcLeftX + playerArcPos.value * arcLengthPx;
-    const half = LAYOUT.ballSpritePx / 2;
-    return { transform: [{ translateX: x - half }, { translateY: playerY - half }] };
-  });
-
-  const defenderAnimStyle = useAnimatedStyle(() => {
-    const x = arcLeftX + defenderArcPos.value * arcLengthPx;
-    const half = LAYOUT.defenderSpritePx / 2;
+    const halfW = LAYOUT.shooterSpritePx / 2;
+    const fullH = (LAYOUT.shooterSpritePx * 24) / 16;
     return {
       transform: [
-        { translateX: x - half },
-        { translateY: playerY - LAYOUT.defenderYOffsetPx },
+        { translateX: x - halfW },
+        { translateY: playerY - fullH * 0.95 },
       ],
     };
   });
+
+  /**
+   * Defender perspective: as he closes in (arc distance shrinks), he gets
+   * larger AND moves vertically toward the shooter — selling the depth.
+   */
+  const defenderAnimStyle = useAnimatedStyle(() => {
+    'worklet';
+    const dx = arcLeftX + defenderArcPos.value * arcLengthPx;
+    const arcDist = Math.abs(defenderArcPos.value - playerArcPos.value);
+    // closeness 0..1 — 0 means far across the arc, 1 means right on top.
+    const closeness = Math.max(0, 1 - arcDist * 3);
+    // Sprite scale grows up to 1.35x when defender is right on the shooter.
+    const scale = 1 + closeness * 0.35;
+    // Y position lerps from "near basket" up high to "right above shooter".
+    const farY = playerY - LAYOUT.defenderYOffsetPx;
+    const nearY = playerY - LAYOUT.defenderSpritePx * 1.2;
+    const y = farY + (nearY - farY) * closeness;
+    const halfW = LAYOUT.defenderSpritePx / 2;
+    return {
+      transform: [
+        { translateX: dx - halfW },
+        { translateY: y },
+        { scale },
+      ],
+    };
+  });
+
+  // Defender state: alternating closeoutA/closeoutB while moving fast, else contest.
+  const defenderStateRef = React.useRef<CloseoutDefenderState>('closeoutA');
+  const lastDefenderArcRef = React.useRef(0.5);
+  const [defenderRenderState, setDefenderRenderState] = React.useState<CloseoutDefenderState>(
+    'closeoutA'
+  );
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      const cur = defenderArcPos.value;
+      const speed = Math.abs(cur - lastDefenderArcRef.current);
+      lastDefenderArcRef.current = cur;
+      const arcDist = Math.abs(cur - playerArcPos.value);
+      let next: CloseoutDefenderState;
+      if (speed > 0.003) {
+        next =
+          defenderStateRef.current === 'closeoutA' ? 'closeoutB' : 'closeoutA';
+      } else if (arcDist < 0.12) {
+        next = 'contest';
+      } else {
+        next = 'idle';
+      }
+      defenderStateRef.current = next;
+      setDefenderRenderState(next);
+    }, 160);
+    return () => clearInterval(id);
+  }, [defenderArcPos, playerArcPos]);
 
   // ----- Power-up rendering -----
   const powerUpScreenX = powerUp ? arcLeftX + powerUp.arcPos * arcLengthPx : 0;
@@ -565,44 +641,50 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
   if (isActive(effects.iceDefenderExpiresAt, now)) activeBadges.push({ label: 'ICE', color: PALETTE.lineWhite });
   if (effects.doubleJumpAvailable) activeBadges.push({ label: '2x JUMP', color: PALETTE.greenGo });
 
-  // Trajectory preview: read shared values via React state tick (only while pulling).
+  // Trajectory preview — dotted pixel arc per spec. While the player is
+  // pulling, sample the planned flight and render one small square per
+  // sample (instead of a dashed line) for that chunky pixel-art feel.
   let trajectoryEls: React.ReactElement[] | null = null;
   if (isPulling && pullingTick >= 0) {
     const pull = { x: pullDX.value, y: pullDY.value };
     const len = Math.hypot(pull.x, pull.y);
     const power01 = pullToPower(len);
     if (power01 > 0) {
-      const playerX = arcLeftX + playerArcPos.value * arcLengthPx;
-      const aim = aimFromPull(pull); // identical math to the actual shot
-      const flight = computeFlight({ x: playerX, y: playerY }, rim, aim, power01);
+      // Anchor the preview at the shooter's hands (above feet by ~60% of
+      // his sprite height) so the dotted arc visually emerges from him.
+      const shooterCenterX = arcLeftX + playerArcPos.value * arcLengthPx;
+      const shooterHandY = playerY - LAYOUT.shooterSpritePx * 0.7;
+      const aim = aimFromPull(pull);
+      const flight = computeFlight(
+        { x: shooterCenterX, y: shooterHandY },
+        rim,
+        aim,
+        power01
+      );
       const els: React.ReactElement[] = [];
       const N = LAYOUT.trajectoryDashSegments;
-      let prev = sampleFlight(flight, 0);
-      for (let i = 1; i <= N; i++) {
+      // Start at t > 0 so the first dot doesn't overlap the shooter's body.
+      for (let i = 2; i <= N; i++) {
         const cur = sampleFlight(flight, i / N);
-        if (i % 2 === 1) {
-          els.push(
-            <Line
-              key={`tr-${i}`}
-              x1={prev.x}
-              y1={prev.y}
-              x2={cur.x}
-              y2={cur.y}
-              stroke={PALETTE.yellowBright}
-              strokeWidth={2}
-              opacity={0.95}
-            />
-          );
-        }
-        prev = cur;
+        const radius = i < N - 1 ? 3 : 5;
+        els.push(
+          <Circle
+            key={`tr-${i}`}
+            cx={cur.x}
+            cy={cur.y}
+            r={radius}
+            fill={PALETTE.yellowBright}
+            opacity={CONFIG.ARC_PREVIEW_OPACITY}
+          />
+        );
       }
       const landing = sampleFlight(flight, 1);
       els.push(
         <Circle
-          key="land"
+          key="land-inner"
           cx={landing.x}
           cy={landing.y}
-          r={6}
+          r={7}
           fill={PALETTE.yellowBright}
           stroke={PALETTE.black}
           strokeWidth={2}
@@ -630,10 +712,10 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
       </View>
 
       <Animated.View style={[styles.absolute, defenderAnimStyle]} pointerEvents="none">
-        <DefenderSprite
+        <CloseoutDefenderSprite
           size={LAYOUT.defenderSpritePx}
           variant={defenderVariant ?? DEFENDER_LEVEL_TO_VARIANT[defenderLevel]}
-          frame={defenderFrame}
+          state={defenderRenderState}
           frozen={isActive(effects.iceDefenderExpiresAt, now)}
         />
       </Animated.View>
@@ -660,12 +742,19 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         </View>
       )}
 
-      {/* player ball or in-flight ball */}
-      {!shotInProgress && !ballHidden && (
-        <Animated.View style={[styles.absolute, playerAnimStyle]} pointerEvents="none">
-          <BallSprite size={LAYOUT.ballSpritePx} skin={ballSkin} />
-        </Animated.View>
-      )}
+      {/* Back-facing shooter, anchored center-bottom on the arc position.
+       * He's the same sprite from idle through windup/release/celebrate —
+       * pose comes from `shooterState`. */}
+      <Animated.View style={[styles.absolute, playerAnimStyle]} pointerEvents="none">
+        <BackShooterSprite
+          size={LAYOUT.shooterSpritePx}
+          state={shooterState}
+          subFrame={shooterSubFrame}
+          ballSkin={ballSkin}
+        />
+      </Animated.View>
+      {/* In-flight ball — separate sprite that follows the bezier. Hidden
+       * while the shooter is holding it (idle/windup) and after the result. */}
       {shotInProgress && !ballHidden && (
         <Animated.View style={[styles.absolute, ballAnimStyle]} pointerEvents="none">
           <BallSprite size={LAYOUT.ballSpritePx} skin={ballSkin} />
@@ -703,7 +792,7 @@ export const OffenseScreen: React.FC<OffenseScreenProps> = ({
         )}
       </View>
       <View style={[styles.zoneShoot]} pointerEvents="box-none">
-        <Text style={styles.shootZoneLabel}>↓  SLINGSHOT ZONE  ↓</Text>
+        <Text style={styles.shootZoneLabel}>HOLD &amp; PULL DOWN TO SHOOT</Text>
         {Platform.OS === 'web' ? (
           <WebShootOverlay
             pullDX={pullDX}
