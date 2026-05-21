@@ -29,6 +29,30 @@ export const PALETTE = {
   shadow: '#2c2c44',
   fog: '#7a7a8a',
   highlight: '#ffffff',
+
+  // ---------------------------------------------------------------------
+  // BUCKETS rebuild palette — pulled directly from Reference Image 2.
+  // These are the only colors the playground court / HUD should use.
+  // ---------------------------------------------------------------------
+  courtAsphalt: '#8B6914',          // court surface, sun-baked asphalt
+  courtAsphaltDark: '#6b500e',      // shadow strokes / cracks
+  courtAsphaltLight: '#b08d28',     // worn lighter patches
+  courtLine: '#F5E6C8',             // painted court lines, slightly yellowed
+  courtKeyOrange: '#a8531a',        // free-throw key painted orange
+  skyTop: '#1A1A2E',                // dusk overhead
+  skyMid: '#C94B1F',                // mid sunset gradient stop
+  skyHorizon: '#E8651A',            // burnt orange right at the horizon
+  citySilhouette: '#241a36',        // background city buildings
+  citySilhouetteAccent: '#3a2a52',  // taller building variation
+  treeDark: '#1f2a16',              // tree silhouette
+  treeMid: '#2f4022',                // tree highlight
+  jerseyBlue: '#1E5BB5',            // player default jersey
+  jerseyRed: '#C41E1E',             // defender default jersey
+  hudPanel: '#0A0A0A',              // HUD panel background
+  hudPanelBorder: '#F5C518',        // HUD panel chunky yellow border
+  meterLow: '#CC0000',
+  meterMid: '#FF8C00',
+  meterHigh: '#00CC44',
 } as const;
 
 export type PaletteKey = keyof typeof PALETTE;
@@ -39,11 +63,11 @@ export type PaletteKey = keyof typeof PALETTE;
  */
 export const COURT_PALETTES = {
   playground: {
-    floor: PALETTE.woodDark,
-    floorAccent: PALETTE.woodLight,
-    sky: PALETTE.midnight,
-    skyAccent: PALETTE.dusk,
-    line: PALETTE.lineWhite,
+    floor: PALETTE.courtAsphalt,
+    floorAccent: PALETTE.courtAsphaltDark,
+    sky: PALETTE.skyTop,
+    skyAccent: PALETTE.skyHorizon,
+    line: PALETTE.courtLine,
     accent: PALETTE.yellowBright,
   },
   gym: {
